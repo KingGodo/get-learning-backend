@@ -1,0 +1,276 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum UserRole {
+  ADMIN
+  TEACHER
+  STUDENT
+}
+
+enum Gender {
+  MALE
+  FEMALE
+  OTHER
+  PREFER_NOT_TO_SAY
+}
+
+enum UserStatus {
+  ACTIVE
+  INACTIVE
+  SUSPENDED
+}
+
+enum SchoolStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum TeacherRole {
+  PRIMARY
+  ASSISTANT
+}
+
+enum EnrollmentStatus {
+  ACTIVE
+  LEFT
+  REMOVED
+}
+
+enum ClassStatus {
+  ACTIVE
+  ARCHIVED
+}
+
+enum AssignmentStatus {
+  DRAFT
+  PUBLISHED
+  CLOSED
+}
+
+enum SubmissionStatus {
+  PENDING
+  SUBMITTED
+  LATE
+  GRADED
+  MISSING
+}
+
+enum NotificationType {
+  ASSIGNMENT_PUBLISHED
+  SUBMISSION_RECEIVED
+  SUBMISSION_GRADED
+  GENERAL
+}
+
+model School {
+  id          String       @id @default(cuid())
+  name        String
+  code        String       @unique
+  email       String
+  phoneNumber String
+  website     String?
+  address     String
+  city        String
+  province    String
+  country     String       @default("Zimbabwe")
+  logo        String?
+  status      SchoolStatus @default(ACTIVE)
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  users   User[]
+  classes Class[]
+}
+
+model User {
+  id            String     @id @default(cuid())
+  schoolId      String?
+  firstName     String
+  middleName    String?
+  lastName      String
+  email         String     @unique
+  phoneNumber   String
+  password      String
+  gender        Gender
+  dateOfBirth   DateTime?
+  profileImage  String?
+  role          UserRole
+  status        UserStatus @default(ACTIVE)
+  emailVerified Boolean    @default(false)
+  phoneVerified Boolean    @default(false)
+  lastLogin     DateTime?
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
+  deletedAt     DateTime?
+
+  school  School?  @relation(fields: [schoolId], references: [id])
+  teacher Teacher?
+  student Student?
+  notifications Notification[]
+
+  @@index([schoolId])
+  @@index([role])
+}
+
+model Teacher {
+  id             String   @id @default(cuid())
+  userId         String   @unique
+  employeeNumber String   @unique
+  qualification  String?
+  department     String?
+  bio            String?
+  joinedAt       DateTime @default(now())
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  classTeachers ClassTeacher[]
+  assignments  Assignment[]
+  gradedSubmissions Submission[] @relation("GradedBy")
+}
+
+model Student {
+  id               String   @id @default(cuid())
+  userId           String   @unique
+  studentNumber    String   @unique
+  admissionDate    DateTime @default(now())
+  guardianName     String
+  guardianPhone    String
+  guardianEmail    String?
+  emergencyContact String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  classStudents ClassStudent[]
+  submissions   Submission[]
+}
+
+model Subject {
+  id          String   @id @default(cuid())
+  name        String
+  code        String   @unique
+  description String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  classes Class[]
+}
+
+model Class {
+  id           String      @id @default(cuid())
+  schoolId     String
+  subjectId    String
+  name         String
+  description  String?
+  classCode    String      @unique
+  academicYear Int
+  semester     Int
+  status       ClassStatus @default(ACTIVE)
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+
+  school        School         @relation(fields: [schoolId], references: [id])
+  subject       Subject        @relation(fields: [subjectId], references: [id])
+  classTeachers ClassTeacher[]
+  classStudents ClassStudent[]
+  assignments   Assignment[]
+
+  @@index([schoolId])
+  @@index([subjectId])
+}
+
+model ClassTeacher {
+  id         String      @id @default(cuid())
+  classId    String
+  teacherId  String
+  role       TeacherRole @default(PRIMARY)
+  assignedAt DateTime    @default(now())
+
+  class   Class   @relation(fields: [classId], references: [id], onDelete: Cascade)
+  teacher Teacher @relation(fields: [teacherId], references: [id], onDelete: Cascade)
+
+  @@unique([classId, teacherId])
+  @@index([teacherId])
+}
+
+model ClassStudent {
+  id        String           @id @default(cuid())
+  classId   String
+  studentId String
+  joinedAt  DateTime         @default(now())
+  status    EnrollmentStatus @default(ACTIVE)
+
+  class   Class   @relation(fields: [classId], references: [id], onDelete: Cascade)
+  student Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  @@unique([classId, studentId])
+  @@index([studentId])
+}
+
+model Assignment {
+  id                   String           @id @default(cuid())
+  classId              String
+  teacherId            String
+  title                String
+  description          String
+  instructions         String?
+  attachment           String?
+  dueDate              DateTime
+  totalMarks           Int
+  allowLateSubmission  Boolean          @default(false)
+  status               AssignmentStatus @default(DRAFT)
+  createdAt            DateTime         @default(now())
+  updatedAt            DateTime         @updatedAt
+
+  class       Class        @relation(fields: [classId], references: [id], onDelete: Cascade)
+  teacher     Teacher      @relation(fields: [teacherId], references: [id])
+  submissions Submission[]
+
+  @@index([classId])
+  @@index([teacherId])
+}
+
+model Submission {
+  id           String           @id @default(cuid())
+  assignmentId String
+  studentId    String
+  attachment   String
+  submittedAt  DateTime         @default(now())
+  status       SubmissionStatus @default(SUBMITTED)
+  score        Int?
+  feedback     String?
+  gradedById   String?
+  gradedAt     DateTime?
+  createdAt    DateTime         @default(now())
+  updatedAt    DateTime         @updatedAt
+
+  assignment Assignment @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
+  student    Student    @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  gradedBy   Teacher?   @relation("GradedBy", fields: [gradedById], references: [id])
+
+  @@unique([assignmentId, studentId])
+  @@index([studentId])
+}
+
+model Notification {
+  id        String           @id @default(cuid())
+  userId    String
+  type      NotificationType @default(GENERAL)
+  title     String
+  body      String
+  href      String?
+  readAt    DateTime?
+  createdAt DateTime         @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@index([userId, readAt])
+}
