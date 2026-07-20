@@ -121,25 +121,38 @@ async function seedAdmin() {
   return admin;
 }
 
-async function seedSubjects() {
+async function seedSubjects(schoolId: string) {
   for (const subject of defaultSubjects) {
     await prisma.subject.upsert({
-      where: { code: subject.code },
+      where: {
+        schoolId_code: { schoolId, code: subject.code },
+      },
       update: {
         name: subject.name,
         description: subject.description,
       },
-      create: subject,
+      create: { ...subject, schoolId },
     });
   }
 
-  console.log(`Subjects seeded: ${defaultSubjects.length}`);
+  console.log(`Subjects seeded for school: ${defaultSubjects.length}`);
 }
 
 async function main() {
   console.log("Seeding database...\n");
-  await seedAdmin();
-  await seedSubjects();
+  const admin = await seedAdmin();
+  const schoolId =
+    admin.schoolId ??
+    (
+      await prisma.school.findFirst({
+        orderBy: { createdAt: "asc" },
+        select: { id: true },
+      })
+    )?.id;
+  if (!schoolId) {
+    throw new Error("No school available to seed subjects");
+  }
+  await seedSubjects(schoolId);
   console.log("\nSeed completed.");
 }
 

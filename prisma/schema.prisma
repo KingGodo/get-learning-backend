@@ -86,6 +86,7 @@ model School {
 
   users   User[]
   classes Class[]
+  subjects Subject[]
 }
 
 model User {
@@ -105,6 +106,8 @@ model User {
   emailVerified Boolean    @default(false)
   phoneVerified Boolean    @default(false)
   lastLogin     DateTime?
+  passwordResetToken   String?
+  passwordResetExpires DateTime?
   createdAt     DateTime   @default(now())
   updatedAt     DateTime   @updatedAt
   deletedAt     DateTime?
@@ -131,6 +134,7 @@ model Teacher {
 
   user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
   classTeachers ClassTeacher[]
+  teacherSubjects TeacherSubject[]
   assignments  Assignment[]
   gradedSubmissions Submission[] @relation("GradedBy")
 }
@@ -154,13 +158,32 @@ model Student {
 
 model Subject {
   id          String   @id @default(cuid())
+  schoolId    String
   name        String
-  code        String   @unique
+  code        String
   description String?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  classes Class[]
+  school          School           @relation(fields: [schoolId], references: [id])
+  classes         Class[]
+  teacherSubjects TeacherSubject[]
+
+  @@unique([schoolId, code])
+  @@index([schoolId])
+}
+
+model TeacherSubject {
+  id         String   @id @default(cuid())
+  teacherId  String
+  subjectId  String
+  assignedAt DateTime @default(now())
+
+  teacher Teacher @relation(fields: [teacherId], references: [id], onDelete: Cascade)
+  subject Subject @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+
+  @@unique([teacherId, subjectId])
+  @@index([subjectId])
 }
 
 model Class {

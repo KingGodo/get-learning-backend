@@ -144,6 +144,7 @@ export async function getDashboard(userId: string, role: UserRole) {
       recentSubmissions,
       upcomingDeadlines,
       studentLinks,
+      teacherSubjectRows,
     ] = await Promise.all([
       prisma.class.findMany({
         where: teacherClassFilter,
@@ -222,36 +223,29 @@ export async function getDashboard(userId: string, role: UserRole) {
         select: { studentId: true },
         distinct: ["studentId"],
       }),
+      prisma.teacherSubject.findMany({
+        where: { teacherId: teacher.id },
+        include: { subject: true },
+        orderBy: { subject: { name: "asc" } },
+      }),
     ]);
 
-    const subjectMap = new Map<
-      string,
-      {
-        id: string;
-        name: string;
-        code: string;
-        description: string | null;
-        classCount: number;
-      }
-    >();
+    const classCountBySubject = new Map<string, number>();
     for (const cls of classes) {
       if (!cls.subject) continue;
-      const existing = subjectMap.get(cls.subject.id);
-      if (existing) {
-        existing.classCount += 1;
-      } else {
-        subjectMap.set(cls.subject.id, {
-          id: cls.subject.id,
-          name: cls.subject.name,
-          code: cls.subject.code,
-          description: cls.subject.description,
-          classCount: 1,
-        });
-      }
+      classCountBySubject.set(
+        cls.subject.id,
+        (classCountBySubject.get(cls.subject.id) ?? 0) + 1,
+      );
     }
-    const subjects = Array.from(subjectMap.values()).sort((a, b) =>
-      a.name.localeCompare(b.name),
-    );
+
+    const subjects = teacherSubjectRows.map((row) => ({
+      id: row.subject.id,
+      name: row.subject.name,
+      code: row.subject.code,
+      description: row.subject.description,
+      classCount: classCountBySubject.get(row.subject.id) ?? 0,
+    }));
 
     return {
       role,

@@ -1,13 +1,17 @@
 import bcrypt from "bcrypt";
+import { createHash, randomBytes } from "crypto";
 import { UserRole } from "../../generated/prisma/client.js";
 import { AppError } from "../../common/errors/AppError.js";
-import { newEmployeeNumber, newSchoolCode, newStudentNumber } from "../../common/utils/codes.js";
+import { newEmployeeNumber, newStudentNumber } from "../../common/utils/codes.js";
 import { signToken } from "../../common/utils/tokens.js";
+import { env } from "../../config/env.js";
 import { prisma } from "../../config/prisma.js";
 import type {
+  ForgotPasswordInput,
   LoginInput,
   RegisterStudentInput,
   RegisterTeacherInput,
+  ResetPasswordInput,
   UpdateProfileInput,
 } from "./auth.schema.js";
 
@@ -16,39 +20,38 @@ function sanitizeUser<T extends { password: string }>(user: T) {
   return safe;
 }
 
+function hashResetToken(token: string) {
+  return createHash("sha256").update(token).digest("hex");
+}
+
 export async function registerTeacher(input: RegisterTeacherInput) {
   const existing = await prisma.user.findUnique({ where: { email: input.email } });
   if (existing) {
     throw new AppError("Email is already registered", 409);
   }
 
+  const school = await prisma.school.findUnique({
+    where: { id: input.schoolId },
+  });
+  if (!school) {
+    throw new AppError("School not found", 404);
+  }
+  if (school.status !== "ACTIVE") {
+    throw new AppError("This school is not accepting new teachers", 400);
+  }
+
   const hashedPassword = await bcrypt.hash(input.password, 10);
 
   const result = await prisma.$transaction(async (tx) => {
-    const school = await tx.school.create({
-      data: {
-        name: input.schoolName,
-        code: newSchoolCode(),
-        email: input.schoolEmail,
-        phoneNumber: input.schoolPhone,
-        website: input.schoolWebsite,
-        address: input.schoolAddress,
-        city: input.schoolCity,
-        province: input.schoolProvince,
-      },
-    });
-
     const user = await tx.user.create({
       data: {
         schoolId: school.id,
         firstName: input.firstName,
-        middleName: input.middleName,
         lastName: input.lastName,
         email: input.email,
         phoneNumber: input.phoneNumber,
         password: hashedPassword,
         gender: input.gender,
-        dateOfBirth: input.dateOfBirth ? new Date(input.dateOfBirth) : undefined,
         role: UserRole.TEACHER,
       },
     });
@@ -57,9 +60,6 @@ export async function registerTeacher(input: RegisterTeacherInput) {
       data: {
         userId: user.id,
         employeeNumber: newEmployeeNumber(),
-        qualification: input.qualification,
-        department: input.department,
-        bio: input.bio,
       },
     });
 
@@ -78,6 +78,20 @@ export async function registerTeacher(input: RegisterTeacherInput) {
     teacher: result.teacher,
     school: result.school,
   };
+}
+
+export async function listSchoolsForRegistration() {
+  return prisma.school.findMany({
+    where: { status: "ACTIVE" },
+    select: {
+      id: true,
+      name: true,
+      code: true,
+      city: true,
+      province: true,
+    },
+    orderBy: { name: "asc" },
+  });
 }
 
 export async function registerStudent(input: RegisterStudentInput) {
@@ -269,4 +283,71 @@ export async function updateProfile(userId: string, input: UpdateProfileInput) {
   });
 
   return getMe(userId);
+}
+
+const RESET_TOKEN_TTL_MS = 60 * 60 * 1000; // 1 hour
+
+export async function forgotPassword(input: ForgotPasswordInput) {
+  const generic = {
+    message:
+      "If an account exists for that email, a password reset link has been sent.",
+  };
+
+  const user = await prisma.user.findUnique({ where: { email: input.email } });
+  if (!user || user.deletedAt || user.status !== "ACTIVE") {
+    return generic;
+  }
+
+  const rawToken = randomBytes(32).toString("hex");
+  const tokenHash = hashResetToken(rawToken);
+  const expires = new Date(Date.now() + RESET_TOKEN_TTL_MS);
+
+  await prisma.user.update({
+    where: { id: user.id },
+    data: {
+      passwordResetToken: tokenHash,
+      passwordResetExpires: expires,
+    },
+  });
+
+  const frontendBase = env.FRONTEND_URL.replace(/\/$/, "");
+  const resetUrl = `${frontendBase}/reset-password?token=${rawToken}`;
+
+  // No email provider configured yet — log for local/LAN testing.
+  console.log(`[auth] Password reset for ${user.email}: ${resetUrl}`);
+
+  if (env.NODE_ENV === "development") {
+    return { ...generic, resetUrl };
+  }
+
+  return generic;
+}
+
+export async function resetPassword(input: ResetPasswordInput) {
+  const tokenHash = hashResetToken(input.token);
+
+  const user = await prisma.user.findFirst({
+    where: {
+      passwordResetToken: tokenHash,
+      passwordResetExpires: { gt: new Date() },
+      deletedAt: null,
+    },
+  });
+
+  if (!user) {
+    throw new AppError("Reset link is invalid or has expired", 400);
+  }
+
+  const hashedPassword = await bcrypt.hash(input.password, 10);
+
+  await prisma.user.update({
+    where: { id: user.id },
+    data: {
+      password: hashedPassword,
+      passwordResetToken: null,
+      passwordResetExpires: null,
+    },
+  });
+
+  return { message: "Password updated. You can sign in with your new password." };
 }

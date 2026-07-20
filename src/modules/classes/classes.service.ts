@@ -35,6 +35,18 @@ export async function createClass(
   if (!subject) {
     throw new AppError("Subject not found", 404);
   }
+  if (subject.schoolId !== schoolId) {
+    throw new AppError("Subject does not belong to your school", 400);
+  }
+
+  const assigned = await prisma.teacherSubject.findUnique({
+    where: {
+      teacherId_subjectId: { teacherId: teacher.id, subjectId: subject.id },
+    },
+  });
+  if (!assigned) {
+    throw new AppError("Register for this subject before creating a class", 400);
+  }
 
   return prisma.$transaction(async (tx) => {
     const classRoom = await tx.class.create({

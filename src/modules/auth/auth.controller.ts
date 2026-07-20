@@ -7,6 +7,13 @@ export const registerTeacher = asyncHandler(async (req: Request, res: Response) 
   res.status(201).json({ success: true, data });
 });
 
+export const listRegistrationSchools = asyncHandler(
+  async (_req: Request, res: Response) => {
+    const data = await authService.listSchoolsForRegistration();
+    res.status(200).json({ success: true, data });
+  },
+);
+
 export const registerStudent = asyncHandler(async (req: Request, res: Response) => {
   const data = await authService.registerStudent(req.body);
   res.status(201).json({ success: true, data });
@@ -24,5 +31,15 @@ export const me = asyncHandler(async (req: Request, res: Response) => {
 
 export const updateProfile = asyncHandler(async (req: Request, res: Response) => {
   const data = await authService.updateProfile(req.user!.userId, req.body);
+  res.status(200).json({ success: true, data });
+});
+
+export const forgotPassword = asyncHandler(async (req: Request, res: Response) => {
+  const data = await authService.forgotPassword(req.body);
+  res.status(200).json({ success: true, data });
+});
+
+export const resetPassword = asyncHandler(async (req: Request, res: Response) => {
+  const data = await authService.resetPassword(req.body);
   res.status(200).json({ success: true, data });
 });

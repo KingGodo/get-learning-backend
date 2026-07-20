@@ -42,7 +42,7 @@ router.get(
 router.post(
   "/",
   authenticate,
-  authorize(UserRole.TEACHER, UserRole.ADMIN),
+  authorize(UserRole.ADMIN),
   validate(createSchoolSchema),
   schoolsController.createSchool,
 );

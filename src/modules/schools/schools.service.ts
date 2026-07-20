@@ -2,7 +2,6 @@ import type { UserRole } from "../../generated/prisma/client.js";
 import { UserRole as Role } from "../../generated/prisma/client.js";
 import { AppError } from "../../common/errors/AppError.js";
 import { newSchoolCode } from "../../common/utils/codes.js";
-import { signToken } from "../../common/utils/tokens.js";
 import { prisma } from "../../config/prisma.js";
 import type { CreateSchoolInput, UpdateSchoolInput } from "./schools.schema.js";
 
@@ -46,15 +45,13 @@ export async function getMySchool(schoolId: string | null) {
 }
 
 export async function createSchool(
-  userId: string,
+  _userId: string,
   role: UserRole,
-  schoolId: string | null,
+  _schoolId: string | null,
   input: CreateSchoolInput,
 ) {
-  // Teachers may only create a school if they are not already linked.
-  // System admins can create schools for the platform at any time.
-  if (role !== Role.ADMIN && schoolId) {
-    throw new AppError("This account is already linked to a school", 409);
+  if (role !== Role.ADMIN) {
+    throw new AppError("Only system admins can create schools", 403);
   }
 
   const school = await prisma.school.create({
@@ -70,22 +67,6 @@ export async function createSchool(
       country: input.country ?? "Zimbabwe",
     },
   });
-
-  // Link the creator only when they do not already have a school
-  if (!schoolId) {
-    await prisma.user.update({
-      where: { id: userId },
-      data: { schoolId: school.id },
-    });
-
-    const token = signToken({
-      userId,
-      role,
-      schoolId: school.id,
-    });
-
-    return { school, token };
-  }
 
   return { school, token: null };
 }
