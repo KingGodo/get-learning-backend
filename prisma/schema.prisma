@@ -9,6 +9,7 @@ datasource db {
 
 enum UserRole {
   ADMIN
+  SCHOOL_ADMIN
   TEACHER
   STUDENT
 }
@@ -106,6 +107,7 @@ model User {
   emailVerified Boolean    @default(false)
   phoneVerified Boolean    @default(false)
   lastLogin     DateTime?
+  mustChangePassword   Boolean   @default(false)
   passwordResetToken   String?
   passwordResetExpires DateTime?
   createdAt     DateTime   @default(now())

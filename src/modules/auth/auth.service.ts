@@ -240,7 +240,9 @@ export async function updateProfile(userId: string, input: UpdateProfileInput) {
         phoneNumber: input.phoneNumber,
         ...(input.gender ? { gender: input.gender } : {}),
         ...(dateOfBirth !== undefined ? { dateOfBirth } : {}),
-        ...(passwordHash ? { password: passwordHash } : {}),
+        ...(passwordHash
+          ? { password: passwordHash, mustChangePassword: false }
+          : {}),
       },
     });
 
@@ -344,6 +346,7 @@ export async function resetPassword(input: ResetPasswordInput) {
     where: { id: user.id },
     data: {
       password: hashedPassword,
+      mustChangePassword: false,
       passwordResetToken: null,
       passwordResetExpires: null,
     },

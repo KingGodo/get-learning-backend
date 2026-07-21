@@ -43,7 +43,7 @@ After running `npm run prisma:seed`:
 
 | Field | Value |
 |-------|-------|
-| Email | `admin@eduplatform.local` |
+| Email | `admin@learninghub.local` |
 | Password | `Admin@12345` |
 | Role | `ADMIN` |
 
@@ -495,7 +495,7 @@ Invalid input returns `422` with field-level `errors`.
 | `PUBLIC_APP_URL` | Absolute API origin for local file URLs (optional) |
 | `JWT_SECRET` | JWT signing secret |
 | `JWT_EXPIRES_IN` | e.g. `7d` |
-| `SEED_ADMIN_EMAIL` | Seed admin email (default `admin@eduplatform.local`) |
+| `SEED_ADMIN_EMAIL` | Seed admin email (default `admin@learninghub.local`) |
 | `SEED_ADMIN_PASSWORD` | Seed admin password (default `Admin@12345`) |
 | `SUPABASE_URL` | Storage project URL (optional) |
 | `SUPABASE_SERVICE_ROLE_KEY` | Storage service key (optional) |

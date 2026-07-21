@@ -102,6 +102,135 @@ export async function getDashboard(userId: string, role: UserRole) {
     };
   }
 
+  if (role === UserRole.SCHOOL_ADMIN) {
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: {
+        schoolId: true,
+        firstName: true,
+        lastName: true,
+        email: true,
+        phoneNumber: true,
+        school: {
+          select: {
+            id: true,
+            name: true,
+            code: true,
+            email: true,
+            phoneNumber: true,
+            city: true,
+            province: true,
+            address: true,
+            status: true,
+          },
+        },
+      },
+    });
+
+    if (!user?.schoolId || !user.school) {
+      throw new AppError("No school associated with this account", 404);
+    }
+
+    const schoolId = user.schoolId;
+
+    const [
+      totalTeachers,
+      totalStudents,
+      totalClasses,
+      totalSubjects,
+      totalAssignments,
+      pendingGrading,
+      recentTeachers,
+      recentStudents,
+      upcomingDeadlines,
+    ] = await Promise.all([
+      prisma.user.count({
+        where: { schoolId, role: UserRole.TEACHER, deletedAt: null },
+      }),
+      prisma.user.count({
+        where: { schoolId, role: UserRole.STUDENT, deletedAt: null },
+      }),
+      prisma.class.count({ where: { schoolId, status: "ACTIVE" } }),
+      prisma.subject.count({ where: { schoolId } }),
+      prisma.assignment.count({ where: { class: { schoolId } } }),
+      prisma.submission.count({
+        where: {
+          status: { in: ["SUBMITTED", "LATE"] },
+          assignment: { class: { schoolId } },
+        },
+      }),
+      prisma.teacher.findMany({
+        where: { user: { schoolId, deletedAt: null } },
+        orderBy: { createdAt: "desc" },
+        take: 5,
+        select: {
+          id: true,
+          employeeNumber: true,
+          createdAt: true,
+          user: {
+            select: {
+              firstName: true,
+              lastName: true,
+              email: true,
+            },
+          },
+        },
+      }),
+      prisma.student.findMany({
+        where: { user: { schoolId, deletedAt: null } },
+        orderBy: { createdAt: "desc" },
+        take: 5,
+        select: {
+          id: true,
+          studentNumber: true,
+          createdAt: true,
+          user: {
+            select: {
+              firstName: true,
+              lastName: true,
+              email: true,
+            },
+          },
+        },
+      }),
+      prisma.assignment.findMany({
+        where: {
+          status: "PUBLISHED",
+          dueDate: { gte: new Date() },
+          class: { schoolId },
+        },
+        orderBy: { dueDate: "asc" },
+        take: 5,
+        select: {
+          id: true,
+          title: true,
+          dueDate: true,
+          class: { select: { id: true, name: true } },
+        },
+      }),
+    ]);
+
+    return {
+      role,
+      profile: {
+        firstName: user.firstName,
+        lastName: user.lastName,
+        email: user.email,
+        phoneNumber: user.phoneNumber,
+      },
+      school: user.school,
+      totalTeachers,
+      totalStudents,
+      totalClasses,
+      totalSubjects,
+      totalAssignments,
+      pendingGrading,
+      recentTeachers,
+      recentStudents,
+      upcomingDeadlines,
+    };
+  }
+
   if (role === UserRole.TEACHER) {
     const teacher = await prisma.teacher.findUnique({
       where: { userId },

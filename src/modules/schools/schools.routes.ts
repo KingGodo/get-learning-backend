@@ -27,7 +27,7 @@ router.get(
 router.get(
   "/me",
   authenticate,
-  authorize(UserRole.TEACHER, UserRole.ADMIN),
+  authorize(UserRole.TEACHER, UserRole.ADMIN, UserRole.SCHOOL_ADMIN),
   schoolsController.getMySchool,
 );
 
@@ -50,7 +50,7 @@ router.post(
 router.patch(
   "/me",
   authenticate,
-  authorize(UserRole.TEACHER, UserRole.ADMIN),
+  authorize(UserRole.TEACHER, UserRole.ADMIN, UserRole.SCHOOL_ADMIN),
   validate(updateSchoolSchema),
   schoolsController.updateMySchool,
 );

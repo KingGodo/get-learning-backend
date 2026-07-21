@@ -4,12 +4,30 @@ import { idParamSchema } from "../../common/validation/schemas.js";
 import { authenticate, authorize } from "../../middlewares/auth.middleware.js";
 import { validate } from "../../middlewares/validate.middleware.js";
 import * as usersController from "./users.controller.js";
+import {
+  createStudentSchema,
+  createTeacherSchema,
+  updateUserStatusSchema,
+} from "./users.schema.js";
 
 const router = Router();
 
-router.use(authenticate, authorize(UserRole.ADMIN));
+router.use(authenticate, authorize(UserRole.ADMIN, UserRole.SCHOOL_ADMIN));
 
 router.get("/", usersController.list);
+router.post("/teachers", validate(createTeacherSchema), usersController.createTeacher);
+router.post("/students", validate(createStudentSchema), usersController.createStudent);
 router.get("/:id", validate(idParamSchema, "params"), usersController.getById);
+router.post(
+  "/:id/reset-credentials",
+  validate(idParamSchema, "params"),
+  usersController.resetCredentials,
+);
+router.patch(
+  "/:id/status",
+  validate(idParamSchema, "params"),
+  validate(updateUserStatusSchema),
+  usersController.updateStatus,
+);
 
 export default router;

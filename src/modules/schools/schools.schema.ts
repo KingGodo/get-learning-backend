@@ -1,5 +1,19 @@
 import { z } from "zod";
-import { phoneSchema } from "../../common/validation/schemas.js";
+import {
+  genderSchema,
+  passwordSchema,
+  phoneSchema,
+} from "../../common/validation/schemas.js";
+
+const schoolAdminSchema = z.object({
+  firstName: z.string().trim().min(1, "admin.firstName is required").max(100),
+  lastName: z.string().trim().min(1, "admin.lastName is required").max(100),
+  email: z.email("Valid admin email is required"),
+  phoneNumber: phoneSchema,
+  gender: genderSchema,
+  /** Optional; a temporary password is generated when omitted. */
+  password: passwordSchema.optional(),
+});
 
 export const createSchoolSchema = z.object({
   name: z.string().trim().min(2, "name must be at least 2 characters").max(200),
@@ -10,6 +24,7 @@ export const createSchoolSchema = z.object({
   city: z.string().trim().min(2, "city is required").max(100),
   province: z.string().trim().min(2, "province is required").max(100),
   country: z.string().trim().min(2).max(100).optional(),
+  admin: schoolAdminSchema,
 });
 
 export const updateSchoolSchema = z

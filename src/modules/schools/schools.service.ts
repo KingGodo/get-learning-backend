@@ -1,9 +1,18 @@
+import bcrypt from "bcrypt";
 import type { UserRole } from "../../generated/prisma/client.js";
 import { UserRole as Role } from "../../generated/prisma/client.js";
 import { AppError } from "../../common/errors/AppError.js";
-import { newSchoolCode } from "../../common/utils/codes.js";
+import {
+  newSchoolCode,
+  newTemporaryPassword,
+} from "../../common/utils/codes.js";
 import { prisma } from "../../config/prisma.js";
 import type { CreateSchoolInput, UpdateSchoolInput } from "./schools.schema.js";
+
+function sanitizeUser<T extends { password: string }>(user: T) {
+  const { password: _password, ...safe } = user;
+  return safe;
+}
 
 export async function listSchools(role: UserRole) {
   if (role !== Role.ADMIN) {
@@ -54,21 +63,60 @@ export async function createSchool(
     throw new AppError("Only system admins can create schools", 403);
   }
 
-  const school = await prisma.school.create({
-    data: {
-      name: input.name,
-      code: newSchoolCode(),
-      email: input.email,
-      phoneNumber: input.phoneNumber,
-      website: input.website,
-      address: input.address,
-      city: input.city,
-      province: input.province,
-      country: input.country ?? "Zimbabwe",
-    },
+  const existingAdmin = await prisma.user.findUnique({
+    where: { email: input.admin.email },
+  });
+  if (existingAdmin) {
+    throw new AppError("School admin email is already registered", 409);
+  }
+
+  const temporaryPassword =
+    input.admin.password ?? newTemporaryPassword();
+  const hashedPassword = await bcrypt.hash(temporaryPassword, 10);
+
+  const result = await prisma.$transaction(async (tx) => {
+    const school = await tx.school.create({
+      data: {
+        name: input.name,
+        code: newSchoolCode(),
+        email: input.email,
+        phoneNumber: input.phoneNumber,
+        website: input.website,
+        address: input.address,
+        city: input.city,
+        province: input.province,
+        country: input.country ?? "Zimbabwe",
+      },
+    });
+
+    const admin = await tx.user.create({
+      data: {
+        schoolId: school.id,
+        firstName: input.admin.firstName,
+        lastName: input.admin.lastName,
+        email: input.admin.email,
+        phoneNumber: input.admin.phoneNumber,
+        password: hashedPassword,
+        gender: input.admin.gender,
+        role: Role.SCHOOL_ADMIN,
+        emailVerified: true,
+        status: "ACTIVE",
+        mustChangePassword: true,
+      },
+    });
+
+    return { school, admin };
   });
 
-  return { school, token: null };
+  return {
+    school: result.school,
+    admin: sanitizeUser(result.admin),
+    credentials: {
+      email: result.admin.email,
+      temporaryPassword,
+      mustChangePassword: true,
+    },
+  };
 }
 
 export async function updateMySchool(schoolId: string | null, input: UpdateSchoolInput) {
