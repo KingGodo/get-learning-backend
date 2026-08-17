@@ -1,5 +1,5 @@
 import bcrypt from "bcrypt";
-import { UserRole, UserStatus } from "../../generated/prisma/client.js";
+import { TeacherRole, UserRole, UserStatus } from "../../generated/prisma/client.js";
 import { AppError } from "../../common/errors/AppError.js";
 import {
   newEmployeeNumber,
@@ -10,10 +10,28 @@ import { prisma } from "../../config/prisma.js";
 import type {
   CreateStudentInput,
   CreateTeacherInput,
+  TeacherAssignmentInput,
+  UpdateUserInput,
   UpdateUserStatusInput,
 } from "./users.schema.js";
 
 const MANAGEABLE_ROLES: UserRole[] = [UserRole.TEACHER, UserRole.STUDENT];
+
+function archivedEmail(userId: string) {
+  return `deleted+${userId}@archived.local`;
+}
+
+async function archiveDeletedUserIdentity(user: {
+  id: string;
+  email: string;
+  deletedAt: Date | null;
+}) {
+  if (!user.deletedAt || user.email === archivedEmail(user.id)) return;
+  await prisma.user.update({
+    where: { id: user.id },
+    data: { email: archivedEmail(user.id) },
+  });
+}
 
 const userListSelect = {
   id: true,
@@ -50,6 +68,72 @@ const userListSelect = {
 function sanitizeUser<T extends { password: string }>(user: T) {
   const { password: _password, ...safe } = user;
   return safe;
+}
+
+async function validateAndApplyTeacherAssignments(
+  tx: Parameters<Parameters<typeof prisma.$transaction>[0]>[0],
+  teacherId: string,
+  schoolId: string,
+  assignments: TeacherAssignmentInput[],
+  mode: "create" | "replace",
+) {
+  const subjectIds = assignments.map((a) => a.subjectId);
+  const uniqueSubjectIds = new Set(subjectIds);
+  if (uniqueSubjectIds.size !== subjectIds.length) {
+    throw new AppError("Duplicate subjects in assignments", 400);
+  }
+
+  const subjects = await tx.subject.findMany({
+    where: { id: { in: subjectIds }, schoolId },
+    select: { id: true },
+  });
+  if (subjects.length !== subjectIds.length) {
+    throw new AppError("One or more subjects were not found in this school", 400);
+  }
+
+  const allClassIds = assignments.flatMap((a) => a.classIds);
+  const uniqueClassIds = new Set(allClassIds);
+  if (uniqueClassIds.size !== allClassIds.length) {
+    throw new AppError("Duplicate classes in assignments", 400);
+  }
+
+  const classes = await tx.class.findMany({
+    where: { id: { in: allClassIds }, schoolId },
+    select: { id: true, subjectId: true },
+  });
+  if (classes.length !== allClassIds.length) {
+    throw new AppError("One or more classes were not found in this school", 400);
+  }
+
+  const classById = new Map(classes.map((c) => [c.id, c]));
+  for (const assignment of assignments) {
+    for (const classId of assignment.classIds) {
+      const cls = classById.get(classId);
+      if (!cls || cls.subjectId !== assignment.subjectId) {
+        throw new AppError(
+          "Each class must belong to the selected subject",
+          400,
+        );
+      }
+    }
+  }
+
+  if (mode === "replace") {
+    await tx.classTeacher.deleteMany({ where: { teacherId } });
+    await tx.teacherSubject.deleteMany({ where: { teacherId } });
+  }
+
+  await tx.teacherSubject.createMany({
+    data: subjectIds.map((subjectId) => ({ teacherId, subjectId })),
+  });
+
+  await tx.classTeacher.createMany({
+    data: allClassIds.map((classId) => ({
+      classId,
+      teacherId,
+      role: TeacherRole.PRIMARY,
+    })),
+  });
 }
 
 function assertCanManageUsers(role: UserRole) {
@@ -224,22 +308,37 @@ export async function getUserById(
   await assertCanAccessUser(requesterRole, requesterSchoolId, user);
 
   if (user.teacher) {
-    const classTeachers = await prisma.classTeacher.findMany({
-      where: { teacherId: user.teacher.id },
-      include: {
-        class: {
-          select: {
-            id: true,
-            name: true,
-            classCode: true,
-            status: true,
-            subject: { select: { name: true, code: true } },
-            _count: { select: { classStudents: true, assignments: true } },
+    const [classTeachers, teacherSubjects] = await Promise.all([
+      prisma.classTeacher.findMany({
+        where: { teacherId: user.teacher.id },
+        include: {
+          class: {
+            select: {
+              id: true,
+              name: true,
+              classCode: true,
+              status: true,
+              subjectId: true,
+              subject: { select: { id: true, name: true, code: true } },
+              _count: { select: { classStudents: true, assignments: true } },
+            },
           },
         },
-      },
-    });
-    return { ...user, teacher: { ...user.teacher, classTeachers } };
+      }),
+      prisma.teacherSubject.findMany({
+        where: { teacherId: user.teacher.id },
+        include: {
+          subject: {
+            select: { id: true, name: true, code: true, description: true },
+          },
+        },
+        orderBy: { subject: { name: "asc" } },
+      }),
+    ]);
+    return {
+      ...user,
+      teacher: { ...user.teacher, classTeachers, teacherSubjects },
+    };
   }
 
   return user;
@@ -260,7 +359,11 @@ export async function createTeacher(
 
   const existing = await prisma.user.findUnique({ where: { email: input.email } });
   if (existing) {
-    throw new AppError("Email is already registered", 409);
+    if (existing.deletedAt) {
+      await archiveDeletedUserIdentity(existing);
+    } else {
+      throw new AppError("Email is already registered", 409);
+    }
   }
 
   const temporaryPassword = input.password ?? newTemporaryPassword();
@@ -292,6 +395,14 @@ export async function createTeacher(
       },
     });
 
+    await validateAndApplyTeacherAssignments(
+      tx,
+      teacher.id,
+      schoolId,
+      input.assignments,
+      "create",
+    );
+
     return { user, teacher };
   });
 
@@ -321,7 +432,11 @@ export async function createStudent(
 
   const existing = await prisma.user.findUnique({ where: { email: input.email } });
   if (existing) {
-    throw new AppError("Email is already registered", 409);
+    if (existing.deletedAt) {
+      await archiveDeletedUserIdentity(existing);
+    } else {
+      throw new AppError("Email is already registered", 409);
+    }
   }
 
   const temporaryPassword = input.password ?? newTemporaryPassword();
@@ -444,4 +559,160 @@ export async function updateUserStatus(
   });
 
   return sanitizeUser(updated);
+}
+
+export async function updateUser(
+  requesterRole: UserRole,
+  requesterSchoolId: string | null,
+  userId: string,
+  input: UpdateUserInput,
+) {
+  assertCanManageUsers(requesterRole);
+
+  const user = await prisma.user.findFirst({
+    where: { id: userId, deletedAt: null },
+    include: { teacher: true, student: true },
+  });
+  if (!user) {
+    throw new AppError("User not found", 404);
+  }
+
+  await assertCanAccessUser(requesterRole, requesterSchoolId, user);
+
+  if (
+    requesterRole === UserRole.SCHOOL_ADMIN &&
+    !MANAGEABLE_ROLES.includes(user.role)
+  ) {
+    throw new AppError("School admins can only edit teacher or student profiles", 403);
+  }
+
+  if (requesterRole !== UserRole.ADMIN && input.status && input.status !== user.status) {
+    throw new AppError("Only system admins can change status from this form", 403);
+  }
+
+  if (input.email && input.email !== user.email) {
+    const existing = await prisma.user.findUnique({ where: { email: input.email } });
+    if (existing) {
+      if (existing.deletedAt) {
+        await archiveDeletedUserIdentity(existing);
+      } else {
+        throw new AppError("Email is already registered", 409);
+      }
+    }
+  }
+
+  const updated = await prisma.$transaction(async (tx) => {
+    const nextUser = await tx.user.update({
+      where: { id: user.id },
+      data: {
+        ...(input.firstName !== undefined ? { firstName: input.firstName } : {}),
+        ...(input.middleName !== undefined
+          ? { middleName: input.middleName === "" ? null : input.middleName }
+          : {}),
+        ...(input.lastName !== undefined ? { lastName: input.lastName } : {}),
+        ...(input.email !== undefined ? { email: input.email } : {}),
+        ...(input.phoneNumber !== undefined ? { phoneNumber: input.phoneNumber } : {}),
+        ...(input.gender !== undefined ? { gender: input.gender } : {}),
+        ...(input.status !== undefined ? { status: input.status } : {}),
+      },
+    });
+
+    if (user.teacher) {
+      await tx.teacher.update({
+        where: { userId: user.id },
+        data: {
+          ...(input.department !== undefined
+            ? { department: input.department === "" ? null : input.department }
+            : {}),
+          ...(input.qualification !== undefined
+            ? {
+                qualification:
+                  input.qualification === "" ? null : input.qualification,
+              }
+            : {}),
+        },
+      });
+
+      if (input.assignments) {
+        if (!user.schoolId) {
+          throw new AppError("Teacher must belong to a school", 400);
+        }
+        await validateAndApplyTeacherAssignments(
+          tx,
+          user.teacher.id,
+          user.schoolId,
+          input.assignments,
+          "replace",
+        );
+      }
+    }
+
+    if (user.student) {
+      await tx.student.update({
+        where: { userId: user.id },
+        data: {
+          ...(input.guardianName !== undefined
+            ? { guardianName: input.guardianName }
+            : {}),
+          ...(input.guardianPhone !== undefined
+            ? { guardianPhone: input.guardianPhone }
+            : {}),
+          ...(input.guardianEmail !== undefined
+            ? {
+                guardianEmail:
+                  input.guardianEmail === "" ? null : input.guardianEmail,
+              }
+            : {}),
+          ...(input.emergencyContact !== undefined
+            ? {
+                emergencyContact:
+                  input.emergencyContact === "" ? null : input.emergencyContact,
+              }
+            : {}),
+        },
+      });
+    }
+
+    return nextUser;
+  });
+
+  return sanitizeUser(updated);
+}
+
+export async function deleteUser(
+  requesterRole: UserRole,
+  requesterSchoolId: string | null,
+  userId: string,
+) {
+  assertCanManageUsers(requesterRole);
+
+  const user = await prisma.user.findFirst({
+    where: { id: userId, deletedAt: null },
+  });
+  if (!user) {
+    throw new AppError("User not found", 404);
+  }
+
+  await assertCanAccessUser(requesterRole, requesterSchoolId, user);
+
+  if (requesterRole === UserRole.SCHOOL_ADMIN && !MANAGEABLE_ROLES.includes(user.role)) {
+    throw new AppError("School admins can only delete teacher or student accounts", 403);
+  }
+
+  if (user.role === UserRole.ADMIN) {
+    throw new AppError("Cannot delete system admin accounts", 403);
+  }
+
+  const deleted = await prisma.user.update({
+    where: { id: user.id },
+    data: {
+      email: archivedEmail(user.id),
+      status: UserStatus.INACTIVE,
+      deletedAt: new Date(),
+      passwordResetToken: null,
+      passwordResetExpires: null,
+    },
+  });
+
+  return sanitizeUser(deleted);
 }

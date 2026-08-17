@@ -24,6 +24,8 @@ export const createSchoolSchema = z.object({
   city: z.string().trim().min(2, "city is required").max(100),
   province: z.string().trim().min(2, "province is required").max(100),
   country: z.string().trim().min(2).max(100).optional(),
+  termSystem: z.enum(["TERM", "SEMESTER", "QUARTER"]).optional(),
+  termsPerYear: z.number().int().min(1).max(4).optional(),
   admin: schoolAdminSchema,
 });
 
@@ -38,6 +40,8 @@ export const updateSchoolSchema = z
     province: z.string().trim().min(2).max(100).optional(),
     country: z.string().trim().min(2).max(100).optional(),
     logo: z.url("logo must be a valid URL").nullable().optional(),
+    termSystem: z.enum(["TERM", "SEMESTER", "QUARTER"]).optional(),
+    termsPerYear: z.number().int().min(1).max(4).optional(),
   })
   .refine((data) => Object.keys(data).length > 0, {
     message: "At least one field is required to update",

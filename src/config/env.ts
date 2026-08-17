@@ -13,6 +13,8 @@ const envSchema = z.object({
   PUBLIC_APP_URL: z.string().optional().default(""),
   /** Frontend origin for password-reset links, e.g. http://localhost:3000 */
   FRONTEND_URL: z.string().optional().default("http://localhost:3000"),
+  /** Extra CORS origins (comma-separated), e.g. https://www.example.com */
+  CORS_ORIGINS: z.string().optional().default(""),
   SUPABASE_URL: z.string().optional().default(""),
   SUPABASE_SERVICE_ROLE_KEY: z.string().optional().default(""),
   SUPABASE_STORAGE_BUCKET: z.string().default("lms-files"),

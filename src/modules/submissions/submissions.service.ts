@@ -89,6 +89,13 @@ export async function submitAssignment(
 
   let submission;
   if (existing) {
+    if (existing.status === "GRADED") {
+      throw new AppError(
+        "This submission has been graded and cannot be replaced",
+        400,
+      );
+    }
+
     if (now > assignment.dueDate && !assignment.allowLateSubmission) {
       throw new AppError("Cannot replace submission after due date", 400);
     }
@@ -135,6 +142,34 @@ export async function listSubmissions(
   role: UserRole,
   assignmentId?: string,
 ) {
+  if (role === UserRole.SCHOOL_ADMIN) {
+    const user = await prisma.user.findUnique({ where: { id: userId }, select: { schoolId: true } });
+    if (!user?.schoolId) return [];
+    return prisma.submission.findMany({
+      where: {
+        assignment: { class: { schoolId: user.schoolId } },
+        ...(assignmentId ? { assignmentId } : {}),
+      },
+      include: {
+        assignment: {
+          select: {
+            id: true,
+            title: true,
+            dueDate: true,
+            totalMarks: true,
+            class: { select: { id: true, name: true } },
+          },
+        },
+        student: {
+          include: {
+            user: { select: { firstName: true, lastName: true, email: true } },
+          },
+        },
+      },
+      orderBy: { submittedAt: "desc" },
+    });
+  }
+
   if (role === UserRole.TEACHER || role === UserRole.ADMIN) {
     const teacher = await getTeacherProfile(userId);
     return prisma.submission.findMany({
@@ -143,7 +178,15 @@ export async function listSubmissions(
         ...(assignmentId ? { assignmentId } : {}),
       },
       include: {
-        assignment: { select: { id: true, title: true, dueDate: true, totalMarks: true } },
+        assignment: {
+          select: {
+            id: true,
+            title: true,
+            dueDate: true,
+            totalMarks: true,
+            class: { select: { id: true, name: true } },
+          },
+        },
         student: {
           include: {
             user: { select: { firstName: true, lastName: true, email: true } },
@@ -191,7 +234,16 @@ export async function getSubmission(userId: string, role: UserRole, id: string) 
     throw new AppError("Submission not found", 404);
   }
 
-  if (role === UserRole.TEACHER || role === UserRole.ADMIN) {
+  if (role === UserRole.SCHOOL_ADMIN) {
+    const user = await prisma.user.findUnique({ where: { id: userId }, select: { schoolId: true } });
+    if (!user?.schoolId || submission.assignment.classId == null) {
+      throw new AppError("Submission not found", 404);
+    }
+    const cls = await prisma.class.findUnique({ where: { id: submission.assignment.classId }, select: { schoolId: true } });
+    if (cls?.schoolId !== user.schoolId) {
+      throw new AppError("Submission not found", 404);
+    }
+  } else if (role === UserRole.TEACHER || role === UserRole.ADMIN) {
     const teacher = await getTeacherProfile(userId);
     if (submission.assignment.teacherId !== teacher.id) {
       throw new AppError("You do not have access to this submission", 403);

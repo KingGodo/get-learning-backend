@@ -7,6 +7,7 @@ import * as usersController from "./users.controller.js";
 import {
   createStudentSchema,
   createTeacherSchema,
+  updateUserSchema,
   updateUserStatusSchema,
 } from "./users.schema.js";
 
@@ -24,10 +25,17 @@ router.post(
   usersController.resetCredentials,
 );
 router.patch(
+  "/:id",
+  validate(idParamSchema, "params"),
+  validate(updateUserSchema),
+  usersController.update,
+);
+router.patch(
   "/:id/status",
   validate(idParamSchema, "params"),
   validate(updateUserStatusSchema),
   usersController.updateStatus,
 );
+router.delete("/:id", validate(idParamSchema, "params"), usersController.remove);
 
 export default router;

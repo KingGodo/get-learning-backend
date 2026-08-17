@@ -3,29 +3,15 @@ import { authenticate } from "../../middlewares/auth.middleware.js";
 import { validate } from "../../middlewares/validate.middleware.js";
 import * as authController from "./auth.controller.js";
 import {
+  changePasswordSchema,
   forgotPasswordSchema,
   loginSchema,
-  registerStudentSchema,
-  registerTeacherSchema,
   resetPasswordSchema,
   updateProfileSchema,
+  verifyPasswordSchema,
 } from "./auth.schema.js";
 
 const router = Router();
-
-router.get("/register/schools", authController.listRegistrationSchools);
-
-router.post(
-  "/register/teacher",
-  validate(registerTeacherSchema),
-  authController.registerTeacher,
-);
-
-router.post(
-  "/register/student",
-  validate(registerStudentSchema),
-  authController.registerStudent,
-);
 
 router.post("/login", validate(loginSchema), authController.login);
 
@@ -48,6 +34,20 @@ router.patch(
   authenticate,
   validate(updateProfileSchema),
   authController.updateProfile,
+);
+
+router.patch(
+  "/change-password",
+  authenticate,
+  validate(changePasswordSchema),
+  authController.changePassword,
+);
+
+router.post(
+  "/verify-password",
+  authenticate,
+  validate(verifyPasswordSchema),
+  authController.verifyCurrentPassword,
 );
 
 export default router;

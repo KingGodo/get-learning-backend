@@ -32,7 +32,7 @@ async function start() {
   }
 
   const server = app.listen(env.PORT, env.HOST, () => {
-    console.log(`LMS API listening on ${env.HOST}:${env.PORT}`);
+    console.log(`GetLeaning API listening on ${env.HOST}:${env.PORT}`);
     for (const url of getNetworkUrls(env.PORT)) {
       console.log(`  → ${url}/api/v1`);
     }

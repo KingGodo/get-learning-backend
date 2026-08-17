@@ -88,9 +88,31 @@ export const updateProfileSchema = z.object({
   }
 });
 
+export const changePasswordSchema = z
+  .object({
+    currentPassword: z.string().min(1, "currentPassword is required"),
+    newPassword: passwordSchema,
+    confirmPassword: z.string().min(1, "confirmPassword is required"),
+  })
+  .superRefine((data, ctx) => {
+    if (data.newPassword !== data.confirmPassword) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["confirmPassword"],
+        message: "Passwords do not match",
+      });
+    }
+  });
+
+export const verifyPasswordSchema = z.object({
+  currentPassword: z.string().min(1, "currentPassword is required"),
+});
+
 export type RegisterTeacherInput = z.infer<typeof registerTeacherSchema>;
 export type RegisterStudentInput = z.infer<typeof registerStudentSchema>;
 export type LoginInput = z.infer<typeof loginSchema>;
 export type ForgotPasswordInput = z.infer<typeof forgotPasswordSchema>;
 export type ResetPasswordInput = z.infer<typeof resetPasswordSchema>;
 export type UpdateProfileInput = z.infer<typeof updateProfileSchema>;
+export type ChangePasswordInput = z.infer<typeof changePasswordSchema>;
+export type VerifyPasswordInput = z.infer<typeof verifyPasswordSchema>;

@@ -1,0 +1,22 @@
+[Unit]
+Description=GetLeaning API
+After=network.target postgresql.service
+Wants=postgresql.service
+
+[Service]
+Type=simple
+User=getleaning
+Group=getleaning
+WorkingDirectory=/var/www/getleaning-backend
+EnvironmentFile=/var/www/getleaning-backend/.env
+ExecStart=/usr/bin/node dist/server.js
+Restart=always
+RestartSec=5
+TimeoutStopSec=20
+KillMode=mixed
+
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

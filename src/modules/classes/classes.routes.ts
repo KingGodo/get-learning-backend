@@ -3,6 +3,7 @@ import { UserRole } from "../../generated/prisma/client.js";
 import { idParamSchema } from "../../common/validation/schemas.js";
 import { authenticate, authorize } from "../../middlewares/auth.middleware.js";
 import { validate } from "../../middlewares/validate.middleware.js";
+import materialsRoutes from "../materials/materials.routes.js";
 import * as classesController from "./classes.controller.js";
 import {
   createClassSchema,
@@ -18,7 +19,7 @@ router.get("/", classesController.listMine);
 
 router.post(
   "/",
-  authorize(UserRole.TEACHER, UserRole.ADMIN),
+  authorize(UserRole.SCHOOL_ADMIN, UserRole.ADMIN),
   validate(createClassSchema),
   classesController.create,
 );
@@ -30,6 +31,8 @@ router.post(
   classesController.join,
 );
 
+router.use("/:classId/materials", materialsRoutes);
+
 router.get(
   "/:id",
   validate(idParamSchema, "params"),
@@ -38,7 +41,7 @@ router.get(
 
 router.patch(
   "/:id",
-  authorize(UserRole.TEACHER, UserRole.ADMIN),
+  authorize(UserRole.SCHOOL_ADMIN, UserRole.ADMIN),
   validate(idParamSchema, "params"),
   validate(updateClassSchema),
   classesController.update,
@@ -46,7 +49,7 @@ router.patch(
 
 router.delete(
   "/:id",
-  authorize(UserRole.TEACHER, UserRole.ADMIN),
+  authorize(UserRole.SCHOOL_ADMIN, UserRole.ADMIN),
   validate(idParamSchema, "params"),
   classesController.remove,
 );

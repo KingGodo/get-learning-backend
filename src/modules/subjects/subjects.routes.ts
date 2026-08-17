@@ -14,7 +14,7 @@ router.get("/", subjectsController.list);
 
 router.get(
   "/school-catalog",
-  authorize(UserRole.TEACHER, UserRole.ADMIN),
+  authorize(UserRole.SCHOOL_ADMIN, UserRole.ADMIN, UserRole.TEACHER),
   subjectsController.schoolCatalog,
 );
 
@@ -26,28 +26,14 @@ router.get(
 
 router.post(
   "/",
-  authorize(UserRole.TEACHER, UserRole.ADMIN),
+  authorize(UserRole.SCHOOL_ADMIN, UserRole.ADMIN),
   validate(createSubjectSchema),
   subjectsController.create,
 );
 
-router.post(
-  "/:id/assign",
-  authorize(UserRole.TEACHER),
-  validate(idParamSchema, "params"),
-  subjectsController.assign,
-);
-
-router.delete(
-  "/:id/assign",
-  authorize(UserRole.TEACHER),
-  validate(idParamSchema, "params"),
-  subjectsController.unassign,
-);
-
 router.patch(
   "/:id",
-  authorize(UserRole.TEACHER, UserRole.ADMIN),
+  authorize(UserRole.SCHOOL_ADMIN, UserRole.ADMIN),
   validate(idParamSchema, "params"),
   validate(updateSubjectSchema),
   subjectsController.update,
@@ -55,7 +41,7 @@ router.patch(
 
 router.delete(
   "/:id",
-  authorize(UserRole.TEACHER, UserRole.ADMIN),
+  authorize(UserRole.SCHOOL_ADMIN, UserRole.ADMIN),
   validate(idParamSchema, "params"),
   subjectsController.remove,
 );

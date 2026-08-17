@@ -86,6 +86,8 @@ export async function createSchool(
         city: input.city,
         province: input.province,
         country: input.country ?? "Zimbabwe",
+        termSystem: input.termSystem ?? "TERM",
+        termsPerYear: input.termsPerYear ?? 3,
       },
     });
 

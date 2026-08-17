@@ -1,7 +1,7 @@
 {
-  "name": "lms-backend",
+  "name": "getleaning-backend",
   "version": "1.0.0",
-  "description": "Learning Management System API",
+  "description": "GetLeaning learning management API",
   "main": "dist/server.js",
   "type": "module",
   "directories": {
@@ -13,6 +13,7 @@
     "start": "node dist/server.js",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
+    "prisma:migrate:deploy": "prisma migrate deploy",
     "prisma:studio": "prisma studio",
     "prisma:seed": "tsx prisma/seed.ts",
     "db:seed": "prisma db seed"
@@ -20,6 +21,9 @@
   "keywords": [],
   "author": "",
   "license": "ISC",
+  "engines": {
+    "node": ">=20"
+  },
   "dependencies": {
     "@prisma/adapter-pg": "^7.8.0",
     "@prisma/client": "^7.8.0",

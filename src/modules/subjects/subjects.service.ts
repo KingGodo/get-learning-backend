@@ -24,6 +24,10 @@ async function requireSchoolId(schoolId: string | null) {
   return schoolId;
 }
 
+function canManageSubjects(role: UserRole) {
+  return role === UserRole.SCHOOL_ADMIN || role === UserRole.ADMIN;
+}
+
 async function getSubjectInSchool(subjectId: string, schoolId: string) {
   const subject = await prisma.subject.findFirst({
     where: { id: subjectId, schoolId },
@@ -45,6 +49,14 @@ export async function listSubjects(ctx: AuthContext) {
     return rows.map((row) => row.subject);
   }
 
+  if (ctx.role === UserRole.SCHOOL_ADMIN) {
+    const schoolId = await requireSchoolId(ctx.schoolId);
+    return prisma.subject.findMany({
+      where: { schoolId },
+      orderBy: { name: "asc" },
+    });
+  }
+
   if (ctx.role === UserRole.ADMIN) {
     return prisma.subject.findMany({
       orderBy: { name: "asc" },
@@ -56,29 +68,18 @@ export async function listSubjects(ctx: AuthContext) {
 
 export async function listSchoolCatalog(ctx: AuthContext) {
   const schoolId = await requireSchoolId(ctx.schoolId);
-  if (ctx.role !== UserRole.TEACHER && ctx.role !== UserRole.ADMIN) {
+  if (!canManageSubjects(ctx.role) && ctx.role !== UserRole.TEACHER) {
     throw new AppError("Forbidden", 403);
   }
-
-  const teacher =
-    ctx.role === UserRole.TEACHER ? await getTeacher(ctx.userId) : null;
 
   const subjects = await prisma.subject.findMany({
     where: { schoolId },
     orderBy: { name: "asc" },
-    include: teacher
-      ? {
-          teacherSubjects: {
-            where: { teacherId: teacher.id },
-            select: { id: true },
-          },
-        }
-      : undefined,
   });
 
-  return subjects.map(({ teacherSubjects, ...subject }) => ({
+  return subjects.map((subject) => ({
     ...subject,
-    isAssigned: teacher ? teacherSubjects.length > 0 : false,
+    isAssigned: false,
   }));
 }
 
@@ -103,6 +104,10 @@ export async function getSubject(
       },
     });
     if (!assigned) {
+      throw new AppError("Subject not found", 404);
+    }
+  } else if (opts.role === UserRole.SCHOOL_ADMIN) {
+    if (!opts.schoolId || subject.schoolId !== opts.schoolId) {
       throw new AppError("Subject not found", 404);
     }
   }
@@ -196,7 +201,7 @@ export async function getSubject(
 export async function createSubject(ctx: AuthContext, input: CreateSubjectInput) {
   const schoolId = await requireSchoolId(ctx.schoolId);
 
-  if (ctx.role !== UserRole.TEACHER && ctx.role !== UserRole.ADMIN) {
+  if (!canManageSubjects(ctx.role)) {
     throw new AppError("Forbidden", 403);
   }
 
@@ -209,79 +214,9 @@ export async function createSubject(ctx: AuthContext, input: CreateSubjectInput)
     throw new AppError("Subject code already exists in this school", 409);
   }
 
-  if (ctx.role === UserRole.ADMIN) {
-    return prisma.subject.create({
-      data: { ...input, schoolId },
-    });
-  }
-
-  const teacher = await getTeacher(ctx.userId);
-
-  return prisma.$transaction(async (tx) => {
-    const subject = await tx.subject.create({
-      data: { ...input, schoolId },
-    });
-
-    await tx.teacherSubject.create({
-      data: { teacherId: teacher.id, subjectId: subject.id },
-    });
-
-    return subject;
+  return prisma.subject.create({
+    data: { ...input, schoolId },
   });
-}
-
-export async function assignSubject(ctx: AuthContext, subjectId: string) {
-  const schoolId = await requireSchoolId(ctx.schoolId);
-  if (ctx.role !== UserRole.TEACHER) {
-    throw new AppError("Only teachers can assign subjects", 403);
-  }
-
-  const teacher = await getTeacher(ctx.userId);
-  const subject = await getSubjectInSchool(subjectId, schoolId);
-
-  const existing = await prisma.teacherSubject.findUnique({
-    where: {
-      teacherId_subjectId: { teacherId: teacher.id, subjectId: subject.id },
-    },
-  });
-  if (existing) {
-    return subject;
-  }
-
-  await prisma.teacherSubject.create({
-    data: { teacherId: teacher.id, subjectId: subject.id },
-  });
-
-  return subject;
-}
-
-export async function unassignSubject(ctx: AuthContext, subjectId: string) {
-  const schoolId = await requireSchoolId(ctx.schoolId);
-  if (ctx.role !== UserRole.TEACHER) {
-    throw new AppError("Only teachers can unassign subjects", 403);
-  }
-
-  const teacher = await getTeacher(ctx.userId);
-  await getSubjectInSchool(subjectId, schoolId);
-
-  const classCount = await prisma.class.count({
-    where: {
-      subjectId,
-      classTeachers: { some: { teacherId: teacher.id } },
-    },
-  });
-  if (classCount > 0) {
-    throw new AppError(
-      "Cannot remove a subject while you still have classes for it",
-      400,
-    );
-  }
-
-  await prisma.teacherSubject.deleteMany({
-    where: { teacherId: teacher.id, subjectId },
-  });
-
-  return { success: true };
 }
 
 export async function updateSubject(
@@ -290,21 +225,12 @@ export async function updateSubject(
   input: UpdateSubjectInput,
 ) {
   const schoolId = await requireSchoolId(ctx.schoolId);
-  const subject = await getSubjectInSchool(id, schoolId);
 
-  if (ctx.role === UserRole.TEACHER) {
-    const teacher = await getTeacher(ctx.userId);
-    const assigned = await prisma.teacherSubject.findUnique({
-      where: {
-        teacherId_subjectId: { teacherId: teacher.id, subjectId: id },
-      },
-    });
-    if (!assigned) {
-      throw new AppError("Subject not found", 404);
-    }
-  } else if (ctx.role !== UserRole.ADMIN) {
+  if (!canManageSubjects(ctx.role)) {
     throw new AppError("Forbidden", 403);
   }
+
+  const subject = await getSubjectInSchool(id, schoolId);
 
   if (input.code) {
     const existing = await prisma.subject.findFirst({
@@ -327,21 +253,12 @@ export async function updateSubject(
 
 export async function deleteSubject(ctx: AuthContext, id: string) {
   const schoolId = await requireSchoolId(ctx.schoolId);
-  const subject = await getSubjectInSchool(id, schoolId);
 
-  if (ctx.role === UserRole.TEACHER) {
-    const teacher = await getTeacher(ctx.userId);
-    const assigned = await prisma.teacherSubject.findUnique({
-      where: {
-        teacherId_subjectId: { teacherId: teacher.id, subjectId: id },
-      },
-    });
-    if (!assigned) {
-      throw new AppError("Subject not found", 404);
-    }
-  } else if (ctx.role !== UserRole.ADMIN) {
+  if (!canManageSubjects(ctx.role)) {
     throw new AppError("Forbidden", 403);
   }
+
+  const subject = await getSubjectInSchool(id, schoolId);
 
   const classCount = await prisma.class.count({ where: { subjectId: id } });
   if (classCount > 0) {

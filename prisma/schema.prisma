@@ -69,21 +69,29 @@ enum NotificationType {
   GENERAL
 }
 
+enum TermSystem {
+  TERM
+  SEMESTER
+  QUARTER
+}
+
 model School {
-  id          String       @id @default(cuid())
-  name        String
-  code        String       @unique
-  email       String
-  phoneNumber String
-  website     String?
-  address     String
-  city        String
-  province    String
-  country     String       @default("Zimbabwe")
-  logo        String?
-  status      SchoolStatus @default(ACTIVE)
-  createdAt   DateTime     @default(now())
-  updatedAt   DateTime     @updatedAt
+  id           String       @id @default(cuid())
+  name         String
+  code         String       @unique
+  email        String
+  phoneNumber  String
+  website      String?
+  address      String
+  city         String
+  province     String
+  country      String       @default("Zimbabwe")
+  logo         String?
+  termSystem   TermSystem   @default(TERM)
+  termsPerYear Int          @default(3)
+  status       SchoolStatus @default(ACTIVE)
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
 
   users   User[]
   classes Class[]
@@ -138,6 +146,7 @@ model Teacher {
   classTeachers ClassTeacher[]
   teacherSubjects TeacherSubject[]
   assignments  Assignment[]
+  classMaterials ClassMaterial[]
   gradedSubmissions Submission[] @relation("GradedBy")
 }
 
@@ -206,9 +215,27 @@ model Class {
   classTeachers ClassTeacher[]
   classStudents ClassStudent[]
   assignments   Assignment[]
+  materials     ClassMaterial[]
 
   @@index([schoolId])
   @@index([subjectId])
+}
+
+model ClassMaterial {
+  id          String   @id @default(cuid())
+  classId     String
+  teacherId   String
+  title       String
+  description String?
+  attachment  String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  class   Class   @relation(fields: [classId], references: [id], onDelete: Cascade)
+  teacher Teacher @relation(fields: [teacherId], references: [id])
+
+  @@index([classId, createdAt])
+  @@index([teacherId])
 }
 
 model ClassTeacher {

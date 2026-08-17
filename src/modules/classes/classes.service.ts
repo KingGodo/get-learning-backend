@@ -1,9 +1,15 @@
-import { TeacherRole, UserRole } from "../../generated/prisma/client.js";
+import { UserRole } from "../../generated/prisma/client.js";
 import { AppError } from "../../common/errors/AppError.js";
 import { newClassCode } from "../../common/utils/codes.js";
 import { signToken } from "../../common/utils/tokens.js";
 import { prisma } from "../../config/prisma.js";
 import type { CreateClassInput, JoinClassInput, UpdateClassInput } from "./classes.schema.js";
+
+type AuthContext = {
+  userId: string;
+  role: UserRole;
+  schoolId: string | null;
+};
 
 async function getTeacherProfile(userId: string) {
   const teacher = await prisma.teacher.findUnique({ where: { userId } });
@@ -21,62 +27,63 @@ async function getStudentProfile(userId: string) {
   return student;
 }
 
-export async function createClass(
-  userId: string,
-  schoolId: string | null,
-  input: CreateClassInput,
-) {
+function canManageClasses(role: UserRole) {
+  return role === UserRole.SCHOOL_ADMIN || role === UserRole.ADMIN;
+}
+
+async function requireSchoolId(schoolId: string | null) {
   if (!schoolId) {
-    throw new AppError("Teacher must belong to a school", 400);
+    throw new AppError("You must belong to a school", 400);
+  }
+  return schoolId;
+}
+
+export async function createClass(ctx: AuthContext, input: CreateClassInput) {
+  if (!canManageClasses(ctx.role)) {
+    throw new AppError("Forbidden", 403);
   }
 
-  const teacher = await getTeacherProfile(userId);
   const subject = await prisma.subject.findUnique({ where: { id: input.subjectId } });
   if (!subject) {
     throw new AppError("Subject not found", 404);
   }
-  if (subject.schoolId !== schoolId) {
-    throw new AppError("Subject does not belong to your school", 400);
+
+  if (ctx.role === UserRole.SCHOOL_ADMIN) {
+    const schoolId = await requireSchoolId(ctx.schoolId);
+    if (subject.schoolId !== schoolId) {
+      throw new AppError("Subject does not belong to your school", 400);
+    }
   }
 
-  const assigned = await prisma.teacherSubject.findUnique({
-    where: {
-      teacherId_subjectId: { teacherId: teacher.id, subjectId: subject.id },
+  return prisma.class.create({
+    data: {
+      schoolId: subject.schoolId,
+      subjectId: input.subjectId,
+      name: input.name,
+      description: input.description,
+      classCode: newClassCode(),
+      academicYear: input.academicYear,
+      semester: input.semester,
     },
-  });
-  if (!assigned) {
-    throw new AppError("Register for this subject before creating a class", 400);
-  }
-
-  return prisma.$transaction(async (tx) => {
-    const classRoom = await tx.class.create({
-      data: {
-        schoolId,
-        subjectId: input.subjectId,
-        name: input.name,
-        description: input.description,
-        classCode: newClassCode(),
-        academicYear: input.academicYear,
-        semester: input.semester,
-      },
-      include: { subject: true },
-    });
-
-    await tx.classTeacher.create({
-      data: {
-        classId: classRoom.id,
-        teacherId: teacher.id,
-        role: TeacherRole.PRIMARY,
-      },
-    });
-
-    return classRoom;
+    include: { subject: true },
   });
 }
 
-export async function listMyClasses(userId: string, role: UserRole) {
-  if (role === UserRole.TEACHER || role === UserRole.ADMIN) {
-    const teacher = await getTeacherProfile(userId);
+export async function listMyClasses(ctx: AuthContext) {
+  if (ctx.role === UserRole.SCHOOL_ADMIN) {
+    const schoolId = await requireSchoolId(ctx.schoolId);
+    return prisma.class.findMany({
+      where: { schoolId },
+      include: {
+        subject: true,
+        _count: { select: { classStudents: true, assignments: true } },
+      },
+      orderBy: { createdAt: "desc" },
+    });
+  }
+
+  if (ctx.role === UserRole.TEACHER || ctx.role === UserRole.ADMIN) {
+    const teacher = await getTeacherProfile(ctx.userId);
     return prisma.class.findMany({
       where: {
         classTeachers: { some: { teacherId: teacher.id } },
@@ -89,29 +96,37 @@ export async function listMyClasses(userId: string, role: UserRole) {
     });
   }
 
-  const student = await getStudentProfile(userId);
-  return prisma.class.findMany({
-    where: {
-      classStudents: {
-        some: { studentId: student.id, status: "ACTIVE" },
+  if (ctx.role === UserRole.STUDENT) {
+    const student = await getStudentProfile(ctx.userId);
+    return prisma.class.findMany({
+      where: {
+        classStudents: {
+          some: { studentId: student.id, status: "ACTIVE" },
+        },
       },
-    },
-    include: {
-      subject: true,
-      _count: { select: { classStudents: true, assignments: true } },
-    },
-    orderBy: { createdAt: "desc" },
-  });
+      include: {
+        subject: true,
+        _count: { select: { classStudents: true, assignments: true } },
+      },
+      orderBy: { createdAt: "desc" },
+    });
+  }
+
+  return [];
 }
 
-export async function getClassById(userId: string, role: UserRole, classId: string) {
+export async function getClassById(ctx: AuthContext, classId: string) {
   const classRoom = await prisma.class.findUnique({
     where: { id: classId },
     include: {
       subject: true,
       classTeachers: {
         include: {
-          teacher: { include: { user: { select: { firstName: true, lastName: true, email: true } } } },
+          teacher: {
+            include: {
+              user: { select: { firstName: true, lastName: true, email: true } },
+            },
+          },
         },
       },
       classStudents: {
@@ -142,20 +157,28 @@ export async function getClassById(userId: string, role: UserRole, classId: stri
     throw new AppError("Class not found", 404);
   }
 
-  await assertClassAccess(userId, role, classId);
+  await assertClassAccess(ctx, classId, classRoom.schoolId);
   return classRoom;
 }
 
 export async function updateClass(
-  userId: string,
+  ctx: AuthContext,
   classId: string,
   input: UpdateClassInput,
 ) {
-  await assertTeacherOwnsClass(userId, classId);
+  if (!canManageClasses(ctx.role)) {
+    throw new AppError("Forbidden", 403);
+  }
+
+  const schoolId = await requireSchoolId(ctx.schoolId);
+  const classRoom = await prisma.class.findUnique({ where: { id: classId } });
+  if (!classRoom || classRoom.schoolId !== schoolId) {
+    throw new AppError("Class not found", 404);
+  }
 
   if (input.subjectId) {
     const subject = await prisma.subject.findUnique({ where: { id: input.subjectId } });
-    if (!subject) {
+    if (!subject || subject.schoolId !== schoolId) {
       throw new AppError("Subject not found", 404);
     }
   }
@@ -167,8 +190,17 @@ export async function updateClass(
   });
 }
 
-export async function deleteClass(userId: string, classId: string) {
-  await assertTeacherOwnsClass(userId, classId);
+export async function deleteClass(ctx: AuthContext, classId: string) {
+  if (!canManageClasses(ctx.role)) {
+    throw new AppError("Forbidden", 403);
+  }
+
+  const schoolId = await requireSchoolId(ctx.schoolId);
+  const classRoom = await prisma.class.findUnique({ where: { id: classId } });
+  if (!classRoom || classRoom.schoolId !== schoolId) {
+    throw new AppError("Class not found", 404);
+  }
+
   await prisma.class.delete({ where: { id: classId } });
   return { id: classId };
 }
@@ -242,13 +274,28 @@ async function assertTeacherOwnsClass(userId: string, classId: string) {
   }
 }
 
-async function assertClassAccess(userId: string, role: UserRole, classId: string) {
-  if (role === UserRole.TEACHER || role === UserRole.ADMIN) {
-    await assertTeacherOwnsClass(userId, classId);
+async function assertClassAccess(
+  ctx: AuthContext,
+  classId: string,
+  classSchoolId: string,
+) {
+  if (ctx.role === UserRole.SCHOOL_ADMIN) {
+    if (!ctx.schoolId || ctx.schoolId !== classSchoolId) {
+      throw new AppError("Class not found", 404);
+    }
     return;
   }
 
-  const student = await getStudentProfile(userId);
+  if (ctx.role === UserRole.ADMIN) {
+    return;
+  }
+
+  if (ctx.role === UserRole.TEACHER) {
+    await assertTeacherOwnsClass(ctx.userId, classId);
+    return;
+  }
+
+  const student = await getStudentProfile(ctx.userId);
   const enrollment = await prisma.classStudent.findFirst({
     where: { classId, studentId: student.id, status: "ACTIVE" },
   });

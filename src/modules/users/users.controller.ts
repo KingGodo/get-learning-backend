@@ -55,3 +55,22 @@ export const updateStatus = asyncHandler(async (req: Request, res: Response) => 
   );
   res.status(200).json({ success: true, data });
 });
+
+export const update = asyncHandler(async (req: Request, res: Response) => {
+  const data = await usersService.updateUser(
+    req.user!.role,
+    req.user!.schoolId,
+    req.params.id as string,
+    req.body,
+  );
+  res.status(200).json({ success: true, data });
+});
+
+export const remove = asyncHandler(async (req: Request, res: Response) => {
+  const data = await usersService.deleteUser(
+    req.user!.role,
+    req.user!.schoolId,
+    req.params.id as string,
+  );
+  res.status(200).json({ success: true, data });
+});

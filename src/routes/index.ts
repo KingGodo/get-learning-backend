@@ -13,7 +13,7 @@ import usersRoutes from "../modules/users/users.routes.js";
 const router = Router();
 
 router.get("/health", (_req, res) => {
-  res.status(200).json({ success: true, message: "LMS API is running" });
+  res.status(200).json({ success: true, message: "GetLeaning API is running" });
 });
 
 router.use("/auth", authRoutes);

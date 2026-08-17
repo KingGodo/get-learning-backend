@@ -34,6 +34,18 @@ export const updateProfile = asyncHandler(async (req: Request, res: Response) =>
   res.status(200).json({ success: true, data });
 });
 
+export const changePassword = asyncHandler(async (req: Request, res: Response) => {
+  const data = await authService.changePassword(req.user!.userId, req.body);
+  res.status(200).json({ success: true, data });
+});
+
+export const verifyCurrentPassword = asyncHandler(
+  async (req: Request, res: Response) => {
+    const data = await authService.verifyCurrentPassword(req.user!.userId, req.body);
+    res.status(200).json({ success: true, data });
+  },
+);
+
 export const forgotPassword = asyncHandler(async (req: Request, res: Response) => {
   const data = await authService.forgotPassword(req.body);
   res.status(200).json({ success: true, data });

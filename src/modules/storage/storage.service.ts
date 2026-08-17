@@ -101,6 +101,7 @@ export function parseSupabaseObjectUrl(
 export async function createAccessibleFileUrl(
   storedUrl: string,
   expiresInSeconds = 60 * 60,
+  options?: { download?: boolean; filename?: string },
 ): Promise<string> {
   if (!storedUrl) {
     throw new AppError("File URL is required", 400);
@@ -123,7 +124,9 @@ export async function createAccessibleFileUrl(
   const supabase = getSupabase();
   const { data, error } = await supabase.storage
     .from(object.bucket)
-    .createSignedUrl(object.path, expiresInSeconds);
+    .createSignedUrl(object.path, expiresInSeconds, {
+      download: options?.download ? (options.filename ?? true) : false,
+    });
 
   if (error || !data?.signedUrl) {
     throw new AppError(

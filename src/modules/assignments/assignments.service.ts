@@ -72,6 +72,22 @@ export async function listAssignments(
   role: UserRole,
   classId?: string,
 ) {
+  if (role === UserRole.SCHOOL_ADMIN) {
+    const user = await prisma.user.findUnique({ where: { id: userId }, select: { schoolId: true } });
+    if (!user?.schoolId) return [];
+    return prisma.assignment.findMany({
+      where: {
+        class: { schoolId: user.schoolId },
+        ...(classId ? { classId } : {}),
+      },
+      include: {
+        class: { select: { id: true, name: true, classCode: true } },
+        _count: { select: { submissions: true } },
+      },
+      orderBy: { dueDate: "asc" },
+    });
+  }
+
   if (role === UserRole.TEACHER || role === UserRole.ADMIN) {
     const teacher = await getTeacherProfile(userId);
     return prisma.assignment.findMany({
@@ -120,7 +136,7 @@ export async function getAssignment(userId: string, role: UserRole, id: string) 
         },
       },
       submissions:
-        role === UserRole.TEACHER || role === UserRole.ADMIN
+        role === UserRole.TEACHER || role === UserRole.ADMIN || role === UserRole.SCHOOL_ADMIN
           ? {
               include: {
                 student: {
@@ -138,7 +154,12 @@ export async function getAssignment(userId: string, role: UserRole, id: string) 
     throw new AppError("Assignment not found", 404);
   }
 
-  if (role === UserRole.TEACHER || role === UserRole.ADMIN) {
+  if (role === UserRole.SCHOOL_ADMIN) {
+    const user = await prisma.user.findUnique({ where: { id: userId }, select: { schoolId: true } });
+    if (!user?.schoolId || assignment.class?.schoolId !== user.schoolId) {
+      throw new AppError("Assignment not found", 404);
+    }
+  } else if (role === UserRole.TEACHER || role === UserRole.ADMIN) {
     const teacher = await getTeacherProfile(userId);
     if (assignment.teacherId !== teacher.id) {
       throw new AppError("You do not own this assignment", 403);

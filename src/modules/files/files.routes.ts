@@ -12,6 +12,7 @@ const router = Router();
 
 const accessSchema = z.object({
   url: z.string().min(1, "url is required"),
+  mode: z.enum(["preview", "download"]).optional(),
 });
 
 /** Returns a short-lived signed URL for Preview / Download. */
@@ -20,7 +21,9 @@ router.post(
   authenticate,
   validate(accessSchema),
   asyncHandler(async (req, res) => {
-    const signedUrl = await createAccessibleFileUrl(req.body.url, 60 * 60);
+    const signedUrl = await createAccessibleFileUrl(req.body.url, 60 * 60, {
+      download: req.body.mode === "download",
+    });
     res.status(200).json({
       success: true,
       data: { url: signedUrl },

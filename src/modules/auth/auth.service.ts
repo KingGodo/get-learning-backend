@@ -7,12 +7,14 @@ import { signToken } from "../../common/utils/tokens.js";
 import { env } from "../../config/env.js";
 import { prisma } from "../../config/prisma.js";
 import type {
+  ChangePasswordInput,
   ForgotPasswordInput,
   LoginInput,
   RegisterStudentInput,
   RegisterTeacherInput,
   ResetPasswordInput,
   UpdateProfileInput,
+  VerifyPasswordInput,
 } from "./auth.schema.js";
 
 function sanitizeUser<T extends { password: string }>(user: T) {
@@ -24,10 +26,30 @@ function hashResetToken(token: string) {
   return createHash("sha256").update(token).digest("hex");
 }
 
+function archivedEmail(userId: string) {
+  return `deleted+${userId}@archived.local`;
+}
+
+async function archiveDeletedUserIdentity(user: {
+  id: string;
+  email: string;
+  deletedAt: Date | null;
+}) {
+  if (!user.deletedAt || user.email === archivedEmail(user.id)) return;
+  await prisma.user.update({
+    where: { id: user.id },
+    data: { email: archivedEmail(user.id) },
+  });
+}
+
 export async function registerTeacher(input: RegisterTeacherInput) {
   const existing = await prisma.user.findUnique({ where: { email: input.email } });
   if (existing) {
-    throw new AppError("Email is already registered", 409);
+    if (existing.deletedAt) {
+      await archiveDeletedUserIdentity(existing);
+    } else {
+      throw new AppError("Email is already registered", 409);
+    }
   }
 
   const school = await prisma.school.findUnique({
@@ -97,7 +119,11 @@ export async function listSchoolsForRegistration() {
 export async function registerStudent(input: RegisterStudentInput) {
   const existing = await prisma.user.findUnique({ where: { email: input.email } });
   if (existing) {
-    throw new AppError("Email is already registered", 409);
+    if (existing.deletedAt) {
+      await archiveDeletedUserIdentity(existing);
+    } else {
+      throw new AppError("Email is already registered", 409);
+    }
   }
 
   const hashedPassword = await bcrypt.hash(input.password, 10);
@@ -145,8 +171,9 @@ export async function registerStudent(input: RegisterStudentInput) {
 }
 
 export async function login(input: LoginInput) {
+  const email = input.email.trim().toLowerCase();
   const user = await prisma.user.findUnique({
-    where: { email: input.email },
+    where: { email },
     include: {
       teacher: true,
       student: true,
@@ -155,11 +182,13 @@ export async function login(input: LoginInput) {
   });
 
   if (!user || user.deletedAt) {
+    console.warn(`[auth] login failed: no active user for ${email}`);
     throw new AppError("Invalid email or password", 401);
   }
 
   const valid = await bcrypt.compare(input.password, user.password);
   if (!valid) {
+    console.warn(`[auth] login failed: bad password for ${email}`);
     throw new AppError("Invalid email or password", 401);
   }
 
@@ -285,6 +314,43 @@ export async function updateProfile(userId: string, input: UpdateProfileInput) {
   });
 
   return getMe(userId);
+}
+
+export async function changePassword(userId: string, input: ChangePasswordInput) {
+  const user = await prisma.user.findUnique({ where: { id: userId } });
+  if (!user || user.deletedAt) {
+    throw new AppError("User not found", 404);
+  }
+
+  const valid = await bcrypt.compare(input.currentPassword, user.password);
+  if (!valid) {
+    throw new AppError("Current password is incorrect", 400);
+  }
+
+  const passwordHash = await bcrypt.hash(input.newPassword, 10);
+  await prisma.user.update({
+    where: { id: userId },
+    data: { password: passwordHash, mustChangePassword: false },
+  });
+
+  return { message: "Password updated successfully." };
+}
+
+export async function verifyCurrentPassword(
+  userId: string,
+  input: VerifyPasswordInput,
+) {
+  const user = await prisma.user.findUnique({ where: { id: userId } });
+  if (!user || user.deletedAt) {
+    throw new AppError("User not found", 404);
+  }
+
+  const valid = await bcrypt.compare(input.currentPassword, user.password);
+  if (!valid) {
+    throw new AppError("Current password is incorrect", 400);
+  }
+
+  return { valid: true };
 }
 
 const RESET_TOKEN_TTL_MS = 60 * 60 * 1000; // 1 hour

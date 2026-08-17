@@ -34,22 +34,6 @@ export const create = asyncHandler(async (req: Request, res: Response) => {
   res.status(201).json({ success: true, data });
 });
 
-export const assign = asyncHandler(async (req: Request, res: Response) => {
-  const data = await subjectsService.assignSubject(
-    authContext(req),
-    String(req.params.id),
-  );
-  res.status(200).json({ success: true, data });
-});
-
-export const unassign = asyncHandler(async (req: Request, res: Response) => {
-  const data = await subjectsService.unassignSubject(
-    authContext(req),
-    String(req.params.id),
-  );
-  res.status(200).json({ success: true, data });
-});
-
 export const update = asyncHandler(async (req: Request, res: Response) => {
   const data = await subjectsService.updateSubject(
     authContext(req),
