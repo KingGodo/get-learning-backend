@@ -157,6 +157,59 @@ Returns the current user profile with role-specific relations.
 
 ---
 
+### `PATCH /auth/me`
+
+Auth required. Updates the signed-in user's profile (name, phone, gender, and role-specific fields). Does not change email or password.
+
+---
+
+### `PATCH /auth/change-email`
+
+Auth required. Any role (admin, school admin, teacher, student) can change their own login email.
+
+**Body**
+
+```json
+{
+  "email": "new.address@example.com",
+  "currentPassword": "current-password"
+}
+```
+
+Current password must be correct. Email must be unique. The address is stored lowercase.
+
+**Response `200`**
+
+Returns `message` and the updated `user`.
+
+---
+
+### `PATCH /auth/change-password`
+
+Auth required. Any role can change their own password.
+
+**Body**
+
+```json
+{
+  "currentPassword": "current-password",
+  "newPassword": "new-password-8+",
+  "confirmPassword": "new-password-8+"
+}
+```
+
+**Response `200`**
+
+Returns `{ "message": "Password updated successfully." }`.
+
+---
+
+### `POST /auth/verify-password`
+
+Auth required. Confirms the current password before showing the new-password fields on the profile page.
+
+---
+
 ## 3. Schools
 
 ### `GET /schools/code/:code`

@@ -108,6 +108,11 @@ export const verifyPasswordSchema = z.object({
   currentPassword: z.string().min(1, "currentPassword is required"),
 });
 
+export const changeEmailSchema = z.object({
+  currentPassword: z.string().min(1, "currentPassword is required"),
+  email: z.email("Valid email is required"),
+});
+
 export type RegisterTeacherInput = z.infer<typeof registerTeacherSchema>;
 export type RegisterStudentInput = z.infer<typeof registerStudentSchema>;
 export type LoginInput = z.infer<typeof loginSchema>;
@@ -116,3 +121,4 @@ export type ResetPasswordInput = z.infer<typeof resetPasswordSchema>;
 export type UpdateProfileInput = z.infer<typeof updateProfileSchema>;
 export type ChangePasswordInput = z.infer<typeof changePasswordSchema>;
 export type VerifyPasswordInput = z.infer<typeof verifyPasswordSchema>;
+export type ChangeEmailInput = z.infer<typeof changeEmailSchema>;

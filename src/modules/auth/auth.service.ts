@@ -7,6 +7,7 @@ import { signToken } from "../../common/utils/tokens.js";
 import { env } from "../../config/env.js";
 import { prisma } from "../../config/prisma.js";
 import type {
+  ChangeEmailInput,
   ChangePasswordInput,
   ForgotPasswordInput,
   LoginInput,
@@ -334,6 +335,45 @@ export async function changePassword(userId: string, input: ChangePasswordInput)
   });
 
   return { message: "Password updated successfully." };
+}
+
+export async function changeEmail(userId: string, input: ChangeEmailInput) {
+  const user = await prisma.user.findUnique({ where: { id: userId } });
+  if (!user || user.deletedAt) {
+    throw new AppError("User not found", 404);
+  }
+
+  const valid = await bcrypt.compare(input.currentPassword, user.password);
+  if (!valid) {
+    throw new AppError("Current password is incorrect", 400);
+  }
+
+  const email = input.email.trim().toLowerCase();
+  if (email === user.email.trim().toLowerCase()) {
+    throw new AppError("That is already your email address", 400);
+  }
+
+  const existing = await prisma.user.findFirst({
+    where: {
+      email: { equals: email, mode: "insensitive" },
+      NOT: { id: userId },
+    },
+  });
+
+  if (existing) {
+    if (existing.deletedAt) {
+      await archiveDeletedUserIdentity(existing);
+    } else {
+      throw new AppError("Email is already registered", 409);
+    }
+  }
+
+  await prisma.user.update({
+    where: { id: userId },
+    data: { email, emailVerified: false },
+  });
+
+  return { message: "Email updated successfully.", user: await getMe(userId) };
 }
 
 export async function verifyCurrentPassword(

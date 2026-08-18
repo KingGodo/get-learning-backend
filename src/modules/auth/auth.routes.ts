@@ -3,6 +3,7 @@ import { authenticate } from "../../middlewares/auth.middleware.js";
 import { validate } from "../../middlewares/validate.middleware.js";
 import * as authController from "./auth.controller.js";
 import {
+  changeEmailSchema,
   changePasswordSchema,
   forgotPasswordSchema,
   loginSchema,
@@ -41,6 +42,13 @@ router.patch(
   authenticate,
   validate(changePasswordSchema),
   authController.changePassword,
+);
+
+router.patch(
+  "/change-email",
+  authenticate,
+  validate(changeEmailSchema),
+  authController.changeEmail,
 );
 
 router.post(

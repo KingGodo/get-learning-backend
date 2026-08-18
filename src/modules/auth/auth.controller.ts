@@ -39,6 +39,11 @@ export const changePassword = asyncHandler(async (req: Request, res: Response) =
   res.status(200).json({ success: true, data });
 });
 
+export const changeEmail = asyncHandler(async (req: Request, res: Response) => {
+  const data = await authService.changeEmail(req.user!.userId, req.body);
+  res.status(200).json({ success: true, data });
+});
+
 export const verifyCurrentPassword = asyncHandler(
   async (req: Request, res: Response) => {
     const data = await authService.verifyCurrentPassword(req.user!.userId, req.body);
