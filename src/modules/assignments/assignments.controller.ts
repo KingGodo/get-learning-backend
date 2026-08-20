@@ -4,7 +4,11 @@ import * as assignmentsService from "./assignments.service.js";
 
 export const create = asyncHandler(async (req: Request, res: Response) => {
   const data = await assignmentsService.createAssignment(
-    req.user!.userId,
+    {
+      userId: req.user!.userId,
+      role: req.user!.role,
+      schoolId: req.user!.schoolId,
+    },
     req.body,
     req.file,
   );
@@ -32,7 +36,11 @@ export const getById = asyncHandler(async (req: Request, res: Response) => {
 
 export const update = asyncHandler(async (req: Request, res: Response) => {
   const data = await assignmentsService.updateAssignment(
-    req.user!.userId,
+    {
+      userId: req.user!.userId,
+      role: req.user!.role,
+      schoolId: req.user!.schoolId,
+    },
     String(req.params.id),
     req.body,
     req.file,
@@ -42,7 +50,11 @@ export const update = asyncHandler(async (req: Request, res: Response) => {
 
 export const remove = asyncHandler(async (req: Request, res: Response) => {
   const data = await assignmentsService.deleteAssignment(
-    req.user!.userId,
+    {
+      userId: req.user!.userId,
+      role: req.user!.role,
+      schoolId: req.user!.schoolId,
+    },
     String(req.params.id),
   );
   res.status(200).json({ success: true, data });

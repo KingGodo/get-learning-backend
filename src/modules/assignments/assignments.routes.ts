@@ -25,7 +25,7 @@ router.get(
 
 router.post(
   "/",
-  authorize(UserRole.TEACHER, UserRole.ADMIN),
+  authorize(UserRole.TEACHER, UserRole.ADMIN, UserRole.SCHOOL_ADMIN),
   uploadDocument.single("attachment"),
   validate(createAssignmentSchema),
   assignmentsController.create,
@@ -39,7 +39,7 @@ router.get(
 
 router.patch(
   "/:id",
-  authorize(UserRole.TEACHER, UserRole.ADMIN),
+  authorize(UserRole.TEACHER, UserRole.ADMIN, UserRole.SCHOOL_ADMIN),
   validate(idParamSchema, "params"),
   uploadDocument.single("attachment"),
   validate(updateAssignmentSchema),
@@ -48,7 +48,7 @@ router.patch(
 
 router.delete(
   "/:id",
-  authorize(UserRole.TEACHER, UserRole.ADMIN),
+  authorize(UserRole.TEACHER, UserRole.ADMIN, UserRole.SCHOOL_ADMIN),
   validate(idParamSchema, "params"),
   assignmentsController.remove,
 );

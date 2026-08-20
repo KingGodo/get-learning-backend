@@ -22,7 +22,7 @@ router.get(
 
 router.post(
   "/",
-  authorize(UserRole.TEACHER, UserRole.ADMIN),
+  authorize(UserRole.TEACHER, UserRole.ADMIN, UserRole.SCHOOL_ADMIN),
   uploadDocument.array("attachments", 20),
   validate(classIdParamSchema, "params"),
   validate(createMaterialsSchema),
@@ -31,7 +31,7 @@ router.post(
 
 router.delete(
   "/:id",
-  authorize(UserRole.TEACHER, UserRole.ADMIN),
+  authorize(UserRole.TEACHER, UserRole.ADMIN, UserRole.SCHOOL_ADMIN),
   validate(materialIdParamSchema, "params"),
   materialsController.remove,
 );

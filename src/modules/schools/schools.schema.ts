@@ -1,7 +1,7 @@
 import { z } from "zod";
 import {
   genderSchema,
-  passwordSchema,
+  optionalPasswordSchema,
   phoneSchema,
 } from "../../common/validation/schemas.js";
 
@@ -12,7 +12,7 @@ const schoolAdminSchema = z.object({
   phoneNumber: phoneSchema,
   gender: genderSchema,
   /** Optional; a temporary password is generated when omitted. */
-  password: passwordSchema.optional(),
+  password: optionalPasswordSchema,
 });
 
 export const createSchoolSchema = z.object({

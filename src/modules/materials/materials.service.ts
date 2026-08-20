@@ -30,9 +30,22 @@ async function assertTeacherOwnsClass(teacherId: string, classId: string) {
   const link = await prisma.classTeacher.findFirst({
     where: { classId, teacherId },
   });
-  if (!link) {
-    throw new AppError("You are not assigned to this class", 403);
+  if (link) return;
+
+  const classRoom = await prisma.class.findUnique({
+    where: { id: classId },
+    select: { subjectId: true },
+  });
+  if (!classRoom) {
+    throw new AppError("Class not found", 404);
   }
+
+  const teachesSubject = await prisma.teacherSubject.findFirst({
+    where: { teacherId, subjectId: classRoom.subjectId },
+  });
+  if (teachesSubject) return;
+
+  throw new AppError("You are not assigned to this class", 403);
 }
 
 async function assertClassAccess(
@@ -145,7 +158,11 @@ export async function createMaterials(
   input: CreateMaterialsInput,
   files: Express.Multer.File[],
 ) {
-  if (ctx.role !== UserRole.TEACHER && ctx.role !== UserRole.ADMIN) {
+  if (
+    ctx.role !== UserRole.TEACHER &&
+    ctx.role !== UserRole.ADMIN &&
+    ctx.role !== UserRole.SCHOOL_ADMIN
+  ) {
     throw new AppError("Only teachers can upload reading materials", 403);
   }
 
@@ -180,16 +197,16 @@ export async function deleteMaterial(
   classId: string,
   materialId: string,
 ) {
-  if (ctx.role !== UserRole.TEACHER && ctx.role !== UserRole.ADMIN) {
+  if (
+    ctx.role !== UserRole.TEACHER &&
+    ctx.role !== UserRole.ADMIN &&
+    ctx.role !== UserRole.SCHOOL_ADMIN
+  ) {
     throw new AppError("Only teachers can remove reading materials", 403);
   }
 
-  await requireClass(classId);
-
-  if (ctx.role === UserRole.TEACHER) {
-    const teacher = await getTeacherProfile(ctx.userId);
-    await assertTeacherOwnsClass(teacher.id, classId);
-  }
+  const classRoom = await requireClass(classId);
+  await assertClassAccess(ctx, classId, classRoom.schoolId);
 
   const material = await prisma.classMaterial.findFirst({
     where: { id: materialId, classId },

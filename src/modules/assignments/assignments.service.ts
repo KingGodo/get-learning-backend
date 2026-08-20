@@ -1,9 +1,15 @@
-import { UserRole } from "../../generated/prisma/client.js";
+import { TeacherRole, UserRole } from "../../generated/prisma/client.js";
 import { AppError } from "../../common/errors/AppError.js";
 import { prisma } from "../../config/prisma.js";
 import { uploadFile } from "../storage/storage.service.js";
 import { notifyClassAssignmentPublished } from "../notifications/notifications.service.js";
 import type { CreateAssignmentInput, UpdateAssignmentInput } from "./assignments.schema.js";
+
+type AuthContext = {
+  userId: string;
+  role: UserRole;
+  schoolId: string | null;
+};
 
 async function getTeacherProfile(userId: string) {
   const teacher = await prisma.teacher.findUnique({ where: { userId } });
@@ -21,22 +27,112 @@ async function getStudentProfile(userId: string) {
   return student;
 }
 
-async function assertTeacherOwnsClass(teacherId: string, classId: string) {
-  const link = await prisma.classTeacher.findFirst({
-    where: { classId, teacherId },
+async function linkTeacherToClass(teacherId: string, classId: string) {
+  await prisma.classTeacher.upsert({
+    where: { classId_teacherId: { classId, teacherId } },
+    create: { classId, teacherId, role: TeacherRole.PRIMARY },
+    update: {},
   });
-  if (!link) {
-    throw new AppError("You are not assigned to this class", 403);
+}
+
+async function ensureTeacherCanAuthorClass(
+  teacherId: string,
+  classRoom: { id: string; subjectId: string },
+) {
+  const link = await prisma.classTeacher.findFirst({
+    where: { classId: classRoom.id, teacherId },
+  });
+  if (link) return;
+
+  const teachesSubject = await prisma.teacherSubject.findFirst({
+    where: { teacherId, subjectId: classRoom.subjectId },
+  });
+  if (teachesSubject) {
+    await linkTeacherToClass(teacherId, classRoom.id);
+    return;
+  }
+
+  throw new AppError("You are not assigned to this class", 403);
+}
+
+async function resolveAuthorTeacher(ctx: AuthContext, classId: string) {
+  const classRoom = await prisma.class.findUnique({
+    where: { id: classId },
+    select: { id: true, schoolId: true, subjectId: true },
+  });
+  if (!classRoom) {
+    throw new AppError("Class not found", 404);
+  }
+
+  if (ctx.role === UserRole.SCHOOL_ADMIN) {
+    if (!ctx.schoolId || classRoom.schoolId !== ctx.schoolId) {
+      throw new AppError("Class not found", 404);
+    }
+  }
+
+  const ownTeacher = await prisma.teacher.findUnique({
+    where: { userId: ctx.userId },
+  });
+
+  if (ctx.role === UserRole.TEACHER) {
+    if (!ownTeacher) {
+      throw new AppError("Teacher profile not found", 404);
+    }
+    await ensureTeacherCanAuthorClass(ownTeacher.id, classRoom);
+    return ownTeacher;
+  }
+
+  if (ownTeacher) {
+    const assigned = await prisma.classTeacher.findFirst({
+      where: { classId: classRoom.id, teacherId: ownTeacher.id },
+    });
+    if (assigned) return ownTeacher;
+  }
+
+  const classTeacher = await prisma.classTeacher.findFirst({
+    where: { classId: classRoom.id },
+    orderBy: { assignedAt: "asc" },
+  });
+  if (classTeacher) {
+    return prisma.teacher.findUniqueOrThrow({ where: { id: classTeacher.teacherId } });
+  }
+
+  if (ownTeacher && (ctx.role === UserRole.ADMIN || ctx.role === UserRole.SCHOOL_ADMIN)) {
+    await linkTeacherToClass(ownTeacher.id, classRoom.id);
+    return ownTeacher;
+  }
+
+  throw new AppError(
+    "Assign a teacher to this class before creating assignments",
+    400,
+  );
+}
+
+async function assertCanMutateAssignment(
+  ctx: AuthContext,
+  assignment: { teacherId: string; class: { schoolId: string } },
+) {
+  if (ctx.role === UserRole.ADMIN) return;
+
+  if (ctx.role === UserRole.SCHOOL_ADMIN) {
+    if (!ctx.schoolId || assignment.class.schoolId !== ctx.schoolId) {
+      throw new AppError("Assignment not found", 404);
+    }
+    return;
+  }
+
+  const teacher = await getTeacherProfile(ctx.userId);
+  if (assignment.teacherId !== teacher.id) {
+    throw new AppError("You do not own this assignment", 403);
   }
 }
 
 export async function createAssignment(
-  userId: string,
+  ctx: AuthContext,
   input: CreateAssignmentInput,
   file?: Express.Multer.File,
 ) {
-  const teacher = await getTeacherProfile(userId);
-  await assertTeacherOwnsClass(teacher.id, input.classId);
+  const teacher = await resolveAuthorTeacher(ctx, input.classId);
 
   let attachment: string | undefined;
   if (file) {
@@ -182,7 +278,7 @@ export async function getAssignment(userId: string, role: UserRole, id: string) 
 }
 
 export async function updateAssignment(
-  userId: string,
+  ctx: AuthContext,
   id: string,
   input: UpdateAssignmentInput,
   file?: Express.Multer.File,
@@ -192,14 +288,14 @@ export async function updateAssignment(
     throw new AppError("At least one field or attachment is required to update", 400);
   }
 
-  const teacher = await getTeacherProfile(userId);
-  const existing = await prisma.assignment.findUnique({ where: { id } });
+  const existing = await prisma.assignment.findUnique({
+    where: { id },
+    include: { class: { select: { schoolId: true } } },
+  });
   if (!existing) {
     throw new AppError("Assignment not found", 404);
   }
-  if (existing.teacherId !== teacher.id) {
-    throw new AppError("You do not own this assignment", 403);
-  }
+  await assertCanMutateAssignment(ctx, existing);
 
   let attachment: string | undefined;
   if (file) {
@@ -227,15 +323,15 @@ export async function updateAssignment(
   return assignment;
 }
 
-export async function deleteAssignment(userId: string, id: string) {
-  const teacher = await getTeacherProfile(userId);
-  const existing = await prisma.assignment.findUnique({ where: { id } });
+export async function deleteAssignment(ctx: AuthContext, id: string) {
+  const existing = await prisma.assignment.findUnique({
+    where: { id },
+    include: { class: { select: { schoolId: true } } },
+  });
   if (!existing) {
     throw new AppError("Assignment not found", 404);
   }
-  if (existing.teacherId !== teacher.id) {
-    throw new AppError("You do not own this assignment", 403);
-  }
+  await assertCanMutateAssignment(ctx, existing);
 
   await prisma.assignment.delete({ where: { id } });
   return { id };

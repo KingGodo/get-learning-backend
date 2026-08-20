@@ -84,9 +84,17 @@ export async function listMyClasses(ctx: AuthContext) {
 
   if (ctx.role === UserRole.TEACHER || ctx.role === UserRole.ADMIN) {
     const teacher = await getTeacherProfile(ctx.userId);
+    const taughtSubjects = await prisma.teacherSubject.findMany({
+      where: { teacherId: teacher.id },
+      select: { subjectId: true },
+    });
+    const subjectIds = taughtSubjects.map((row) => row.subjectId);
     return prisma.class.findMany({
       where: {
-        classTeachers: { some: { teacherId: teacher.id } },
+        OR: [
+          { classTeachers: { some: { teacherId: teacher.id } } },
+          ...(subjectIds.length > 0 ? [{ subjectId: { in: subjectIds } }] : []),
+        ],
       },
       include: {
         subject: true,
@@ -269,9 +277,22 @@ async function assertTeacherOwnsClass(userId: string, classId: string) {
   const link = await prisma.classTeacher.findFirst({
     where: { classId, teacherId: teacher.id },
   });
-  if (!link) {
-    throw new AppError("You are not assigned to this class", 403);
+  if (link) return;
+
+  const classRoom = await prisma.class.findUnique({
+    where: { id: classId },
+    select: { subjectId: true },
+  });
+  if (!classRoom) {
+    throw new AppError("Class not found", 404);
   }
+
+  const teachesSubject = await prisma.teacherSubject.findFirst({
+    where: { teacherId: teacher.id, subjectId: classRoom.subjectId },
+  });
+  if (teachesSubject) return;
+
+  throw new AppError("You are not assigned to this class", 403);
 }
 
 async function assertClassAccess(

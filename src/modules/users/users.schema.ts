@@ -1,7 +1,7 @@
 import { z } from "zod";
 import {
   genderSchema,
-  passwordSchema,
+  optionalPasswordSchema,
   phoneSchema,
 } from "../../common/validation/schemas.js";
 
@@ -13,7 +13,7 @@ const personBaseSchema = z.object({
   phoneNumber: phoneSchema,
   gender: genderSchema,
   /** Optional; a temporary password is generated when omitted. */
-  password: passwordSchema.optional(),
+  password: optionalPasswordSchema,
   /**
    * Required when a platform ADMIN creates the user.
    * Ignored for SCHOOL_ADMIN (their school is used).
@@ -29,7 +29,6 @@ export const teacherAssignmentSchema = z.object({
 });
 
 export const createTeacherSchema = personBaseSchema.extend({
-  password: passwordSchema,
   department: z.string().trim().max(100).optional(),
   qualification: z.string().trim().max(200).optional(),
   assignments: z

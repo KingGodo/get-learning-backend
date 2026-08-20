@@ -33,3 +33,10 @@ export const passwordSchema = z
   .string()
   .min(8, "password must be at least 8 characters")
   .max(128, "password must be at most 128 characters");
+
+/** Optional one-off password; blank/omitted means generate one. */
+export const optionalPasswordSchema = z.preprocess((val) => {
+  if (typeof val !== "string") return val;
+  const trimmed = val.trim();
+  return trimmed.length === 0 ? undefined : trimmed;
+}, passwordSchema.optional());

@@ -366,7 +366,7 @@ export async function createTeacher(
     }
   }
 
-  const temporaryPassword = input.password ?? newTemporaryPassword();
+  const temporaryPassword = input.password || newTemporaryPassword();
   const hashedPassword = await bcrypt.hash(temporaryPassword, 10);
 
   const result = await prisma.$transaction(async (tx) => {
@@ -439,7 +439,7 @@ export async function createStudent(
     }
   }
 
-  const temporaryPassword = input.password ?? newTemporaryPassword();
+  const temporaryPassword = input.password || newTemporaryPassword();
   const hashedPassword = await bcrypt.hash(temporaryPassword, 10);
 
   const result = await prisma.$transaction(async (tx) => {

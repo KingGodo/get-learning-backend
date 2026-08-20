@@ -70,8 +70,7 @@ export async function createSchool(
     throw new AppError("School admin email is already registered", 409);
   }
 
-  const temporaryPassword =
-    input.admin.password ?? newTemporaryPassword();
+  const temporaryPassword = input.admin.password || newTemporaryPassword();
   const hashedPassword = await bcrypt.hash(temporaryPassword, 10);
 
   const result = await prisma.$transaction(async (tx) => {

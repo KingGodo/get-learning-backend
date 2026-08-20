@@ -360,7 +360,9 @@ Query (optional):
 
 ### `POST /assignments`
 
-Auth: `TEACHER` | `ADMIN`
+Auth: `TEACHER` | `SCHOOL_ADMIN` | `ADMIN`
+
+Teachers can create assignments for classes they are assigned to, or for classes in subjects they teach. School admins can create assignments for classes in their school.
 
 `multipart/form-data` or JSON.
 
@@ -382,7 +384,7 @@ Teachers see all submissions. Students cannot view drafts.
 
 ### `PATCH /assignments/:id`
 
-Auth: `TEACHER` | `ADMIN` (owner)
+Auth: `TEACHER` | `SCHOOL_ADMIN` | `ADMIN` (teachers: owner only)
 
 Supports optional new `attachment` file (attachment-only updates are allowed).
 
