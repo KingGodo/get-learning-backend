@@ -32,7 +32,7 @@ fi
 
 if [[ ! -f "$APP_DIR/.env" && -f "$APP_DIR/.env.production.example" ]]; then
   cp "$APP_DIR/.env.production.example" "$APP_DIR/.env"
-  echo "Created $APP_DIR/.env from the production example — edit secrets before starting the API."
+  echo "Created $APP_DIR/.env from the production example. Edit secrets before starting the API."
 fi
 
 mkdir -p "$APP_DIR/uploads"
@@ -55,7 +55,7 @@ systemctl enable --now nginx
 echo
 echo "Next:"
 echo "  1. Edit $APP_DIR/.env (DATABASE_URL, JWT_SECRET, FRONTEND_URL, PUBLIC_APP_URL)"
-echo "  2. Edit /etc/nginx/sites-available/getleaning-api — set your API hostname"
+echo "  2. Edit /etc/nginx/sites-available/getleaning-api. Set your API hostname"
 echo "  3. sudo -u $APP_USER bash $APP_DIR/deploy/release.sh"
 echo "  4. systemctl enable --now getleaning-api"
 echo "  5. Point DNS A record to this droplet, then: apt-get install -y certbot python3-certbot-nginx && certbot --nginx -d api.example.com"

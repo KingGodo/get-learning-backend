@@ -9,6 +9,8 @@ import dashboardRoutes from "../modules/dashboard/dashboard.routes.js";
 import filesRoutes from "../modules/files/files.routes.js";
 import notificationsRoutes from "../modules/notifications/notifications.routes.js";
 import usersRoutes from "../modules/users/users.routes.js";
+import auditRoutes from "../modules/audit/audit.routes.js";
+import analyticsRoutes from "../modules/analytics/analytics.routes.js";
 
 const router = Router();
 
@@ -26,5 +28,7 @@ router.use("/dashboard", dashboardRoutes);
 router.use("/files", filesRoutes);
 router.use("/notifications", notificationsRoutes);
 router.use("/users", usersRoutes);
+router.use("/audit", auditRoutes);
+router.use("/analytics", analyticsRoutes);
 
 export default router;

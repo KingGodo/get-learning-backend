@@ -8,14 +8,30 @@ import {
 } from "../../common/utils/codes.js";
 import { prisma } from "../../config/prisma.js";
 import type {
+  CreateHeadmasterInput,
+  CreateParentInput,
   CreateStudentInput,
   CreateTeacherInput,
   TeacherAssignmentInput,
   UpdateUserInput,
   UpdateUserStatusInput,
 } from "./users.schema.js";
+import { canManageUsers, canViewUsers } from "../../common/utils/roles.js";
 
-const MANAGEABLE_ROLES: UserRole[] = [UserRole.TEACHER, UserRole.STUDENT];
+const MANAGEABLE_ROLES: UserRole[] = [
+  UserRole.HEADMASTER,
+  UserRole.TEACHER,
+  UserRole.STUDENT,
+  UserRole.PARENT,
+];
+
+const SCHOOL_VISIBLE_ROLES: UserRole[] = [
+  UserRole.SCHOOL_ADMIN,
+  UserRole.HEADMASTER,
+  UserRole.TEACHER,
+  UserRole.STUDENT,
+  UserRole.PARENT,
+];
 
 function archivedEmail(userId: string) {
   return `deleted+${userId}@archived.local`;
@@ -61,6 +77,22 @@ const userListSelect = {
       id: true,
       studentNumber: true,
       guardianName: true,
+    },
+  },
+  parent: {
+    select: {
+      id: true,
+      children: {
+        select: {
+          student: {
+            select: {
+              id: true,
+              studentNumber: true,
+              user: { select: { firstName: true, lastName: true } },
+            },
+          },
+        },
+      },
     },
   },
 } as const;
@@ -137,8 +169,14 @@ async function validateAndApplyTeacherAssignments(
 }
 
 function assertCanManageUsers(role: UserRole) {
-  if (role !== UserRole.ADMIN && role !== UserRole.SCHOOL_ADMIN) {
+  if (!canManageUsers(role)) {
     throw new AppError("You do not have permission to manage users", 403);
+  }
+}
+
+function assertCanViewUsers(role: UserRole) {
+  if (!canViewUsers(role)) {
+    throw new AppError("You do not have permission to view users", 403);
   }
 }
 
@@ -181,7 +219,7 @@ async function assertCanAccessUser(
     return;
   }
 
-  if (requesterRole !== UserRole.SCHOOL_ADMIN) {
+  if (requesterRole !== UserRole.SCHOOL_ADMIN && requesterRole !== UserRole.HEADMASTER) {
     throw new AppError("You do not have permission to view this user", 403);
   }
 
@@ -189,12 +227,7 @@ async function assertCanAccessUser(
     throw new AppError("User not found", 404);
   }
 
-  // School admins manage teachers/students; they may also view other school admins.
-  if (
-    target.role !== UserRole.TEACHER &&
-    target.role !== UserRole.STUDENT &&
-    target.role !== UserRole.SCHOOL_ADMIN
-  ) {
+  if (!SCHOOL_VISIBLE_ROLES.includes(target.role)) {
     throw new AppError("User not found", 404);
   }
 }
@@ -204,16 +237,19 @@ export async function listUsers(
   requesterSchoolId: string | null,
   filters?: { role?: string; q?: string },
 ) {
-  assertCanManageUsers(requesterRole);
+  assertCanViewUsers(requesterRole);
 
-  if (requesterRole === UserRole.SCHOOL_ADMIN && !requesterSchoolId) {
+  if (
+    (requesterRole === UserRole.SCHOOL_ADMIN || requesterRole === UserRole.HEADMASTER) &&
+    !requesterSchoolId
+  ) {
     throw new AppError("No school associated with this account", 400);
   }
 
   const allowedRoleFilters =
     requesterRole === UserRole.ADMIN
-      ? ["ADMIN", "SCHOOL_ADMIN", "TEACHER", "STUDENT"]
-      : ["SCHOOL_ADMIN", "TEACHER", "STUDENT"];
+      ? ["ADMIN", "SCHOOL_ADMIN", "HEADMASTER", "TEACHER", "STUDENT", "PARENT"]
+      : ["SCHOOL_ADMIN", "HEADMASTER", "TEACHER", "STUDENT", "PARENT"];
 
   const q = filters?.q?.trim();
   const roleFilter =
@@ -224,12 +260,12 @@ export async function listUsers(
   return prisma.user.findMany({
     where: {
       deletedAt: null,
-      ...(requesterRole === UserRole.SCHOOL_ADMIN
+      ...(requesterRole === UserRole.SCHOOL_ADMIN || requesterRole === UserRole.HEADMASTER
         ? {
             schoolId: requesterSchoolId!,
             role: roleFilter
               ? roleFilter
-              : { in: [UserRole.SCHOOL_ADMIN, UserRole.TEACHER, UserRole.STUDENT] },
+              : { in: SCHOOL_VISIBLE_ROLES },
           }
         : roleFilter
           ? { role: roleFilter }
@@ -255,7 +291,7 @@ export async function getUserById(
   requesterSchoolId: string | null,
   id: string,
 ) {
-  assertCanManageUsers(requesterRole);
+  assertCanViewUsers(requesterRole);
 
   const user = await prisma.user.findFirst({
     where: { id, deletedAt: null },
@@ -296,6 +332,21 @@ export async function getUserById(
             },
           },
           _count: { select: { submissions: true } },
+        },
+      },
+      parent: {
+        include: {
+          children: {
+            include: {
+              student: {
+                select: {
+                  id: true,
+                  studentNumber: true,
+                  user: { select: { firstName: true, lastName: true, email: true } },
+                },
+              },
+            },
+          },
         },
       },
     },
@@ -477,6 +528,147 @@ export async function createStudent(
   return {
     user: sanitizeUser(result.user),
     student: result.student,
+    credentials: {
+      email: result.user.email,
+      temporaryPassword,
+      mustChangePassword: true,
+    },
+  };
+}
+
+export async function createHeadmaster(
+  requesterRole: UserRole,
+  requesterSchoolId: string | null,
+  input: CreateHeadmasterInput,
+) {
+  assertCanManageUsers(requesterRole);
+
+  const schoolId = await resolveTargetSchoolId(
+    requesterRole,
+    requesterSchoolId,
+    input.schoolId,
+  );
+
+  const existing = await prisma.user.findUnique({ where: { email: input.email } });
+  if (existing) {
+    if (existing.deletedAt) {
+      await archiveDeletedUserIdentity(existing);
+    } else {
+      throw new AppError("Email is already registered", 409);
+    }
+  }
+
+  const temporaryPassword = input.password || newTemporaryPassword();
+  const hashedPassword = await bcrypt.hash(temporaryPassword, 10);
+
+  const user = await prisma.user.create({
+    data: {
+      schoolId,
+      firstName: input.firstName,
+      middleName: input.middleName,
+      lastName: input.lastName,
+      email: input.email,
+      phoneNumber: input.phoneNumber,
+      password: hashedPassword,
+      gender: input.gender,
+      role: UserRole.HEADMASTER,
+      mustChangePassword: true,
+      status: UserStatus.ACTIVE,
+    },
+  });
+
+  return {
+    user: sanitizeUser(user),
+    credentials: {
+      email: user.email,
+      temporaryPassword,
+      mustChangePassword: true,
+    },
+  };
+}
+
+export async function createParent(
+  requesterRole: UserRole,
+  requesterSchoolId: string | null,
+  input: CreateParentInput,
+) {
+  assertCanManageUsers(requesterRole);
+
+  const schoolId = await resolveTargetSchoolId(
+    requesterRole,
+    requesterSchoolId,
+    input.schoolId,
+  );
+
+  const uniqueStudentIds = [...new Set(input.studentIds)];
+  const students = await prisma.student.findMany({
+    where: {
+      id: { in: uniqueStudentIds },
+      user: { schoolId, deletedAt: null, role: UserRole.STUDENT },
+    },
+    select: { id: true },
+  });
+  if (students.length !== uniqueStudentIds.length) {
+    throw new AppError("One or more students were not found in this school", 400);
+  }
+
+  const existing = await prisma.user.findUnique({ where: { email: input.email } });
+  if (existing) {
+    if (existing.deletedAt) {
+      await archiveDeletedUserIdentity(existing);
+    } else {
+      throw new AppError("Email is already registered", 409);
+    }
+  }
+
+  const temporaryPassword = input.password || newTemporaryPassword();
+  const hashedPassword = await bcrypt.hash(temporaryPassword, 10);
+
+  const result = await prisma.$transaction(async (tx) => {
+    const user = await tx.user.create({
+      data: {
+        schoolId,
+        firstName: input.firstName,
+        middleName: input.middleName,
+        lastName: input.lastName,
+        email: input.email,
+        phoneNumber: input.phoneNumber,
+        password: hashedPassword,
+        gender: input.gender,
+        role: UserRole.PARENT,
+        mustChangePassword: true,
+        status: UserStatus.ACTIVE,
+      },
+    });
+
+    const parent = await tx.parent.create({
+      data: {
+        userId: user.id,
+        children: {
+          create: uniqueStudentIds.map((studentId) => ({ studentId })),
+        },
+      },
+      include: {
+        children: {
+          include: {
+            student: {
+              select: {
+                id: true,
+                studentNumber: true,
+                user: { select: { firstName: true, lastName: true } },
+              },
+            },
+          },
+        },
+      },
+    });
+
+    return { user, parent };
+  });
+
+  return {
+    user: sanitizeUser(result.user),
+    parent: result.parent,
     credentials: {
       email: result.user.email,
       temporaryPassword,

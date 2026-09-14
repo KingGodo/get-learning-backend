@@ -1,4 +1,6 @@
 import { TeacherRole, UserRole } from "../../generated/prisma/client.js";
+import { isParent } from "../../common/utils/roles.js";
+import { getLinkedStudentIds } from "../../common/utils/parent-access.js";
 import { AppError } from "../../common/errors/AppError.js";
 import { prisma } from "../../config/prisma.js";
 import { uploadFile } from "../storage/storage.service.js";
@@ -168,7 +170,7 @@ export async function listAssignments(
   role: UserRole,
   classId?: string,
 ) {
-  if (role === UserRole.SCHOOL_ADMIN) {
+  if (role === UserRole.SCHOOL_ADMIN || role === UserRole.HEADMASTER) {
     const user = await prisma.user.findUnique({ where: { id: userId }, select: { schoolId: true } });
     if (!user?.schoolId) return [];
     return prisma.assignment.findMany({
@@ -194,6 +196,36 @@ export async function listAssignments(
       include: {
         class: { select: { id: true, name: true, classCode: true } },
         _count: { select: { submissions: true } },
+      },
+      orderBy: { dueDate: "asc" },
+    });
+  }
+
+  if (isParent(role)) {
+    const studentIds = await getLinkedStudentIds(userId);
+    if (studentIds.length === 0) return [];
+    return prisma.assignment.findMany({
+      where: {
+        status: { in: ["PUBLISHED", "CLOSED"] },
+        class: {
+          classStudents: {
+            some: { studentId: { in: studentIds }, status: "ACTIVE" },
+          },
+        },
+        ...(classId ? { classId } : {}),
+      },
+      include: {
+        class: { select: { id: true, name: true, classCode: true } },
+        submissions: {
+          where: { studentId: { in: studentIds } },
+          select: {
+            id: true,
+            status: true,
+            submittedAt: true,
+            score: true,
+            studentId: true,
+          },
+        },
       },
       orderBy: { dueDate: "asc" },
     });
@@ -232,7 +264,11 @@ export async function getAssignment(userId: string, role: UserRole, id: string) 
         },
       },
       submissions:
-        role === UserRole.TEACHER || role === UserRole.ADMIN || role === UserRole.SCHOOL_ADMIN
+        role === UserRole.TEACHER ||
+        role === UserRole.ADMIN ||
+        role === UserRole.SCHOOL_ADMIN ||
+        role === UserRole.HEADMASTER ||
+        role === UserRole.PARENT
           ? {
               include: {
                 student: {
@@ -241,6 +277,13 @@ export async function getAssignment(userId: string, role: UserRole, id: string) 
                   },
                 },
               },
+              ...(role === UserRole.PARENT
+                ? {
+                    where: {
+                      studentId: { in: await getLinkedStudentIds(userId) },
+                    },
+                  }
+                : {}),
             }
           : undefined,
     },
@@ -250,7 +293,7 @@ export async function getAssignment(userId: string, role: UserRole, id: string) 
     throw new AppError("Assignment not found", 404);
   }
 
-  if (role === UserRole.SCHOOL_ADMIN) {
+  if (role === UserRole.SCHOOL_ADMIN || role === UserRole.HEADMASTER) {
     const user = await prisma.user.findUnique({ where: { id: userId }, select: { schoolId: true } });
     if (!user?.schoolId || assignment.class?.schoolId !== user.schoolId) {
       throw new AppError("Assignment not found", 404);
@@ -259,6 +302,18 @@ export async function getAssignment(userId: string, role: UserRole, id: string) 
     const teacher = await getTeacherProfile(userId);
     if (assignment.teacherId !== teacher.id) {
       throw new AppError("You do not own this assignment", 403);
+    }
+  } else if (role === UserRole.PARENT) {
+    const studentIds = await getLinkedStudentIds(userId);
+    const enrolled = await prisma.classStudent.findFirst({
+      where: {
+        classId: assignment.classId,
+        studentId: { in: studentIds },
+        status: "ACTIVE",
+      },
+    });
+    if (!enrolled || assignment.status === "DRAFT") {
+      throw new AppError("Assignment not available", 403);
     }
   } else {
     const student = await getStudentProfile(userId);

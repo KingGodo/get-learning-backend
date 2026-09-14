@@ -10,8 +10,10 @@ datasource db {
 enum UserRole {
   ADMIN
   SCHOOL_ADMIN
+  HEADMASTER
   TEACHER
   STUDENT
+  PARENT
 }
 
 enum Gender {
@@ -96,6 +98,7 @@ model School {
   users   User[]
   classes Class[]
   subjects Subject[]
+  auditLogs AuditLog[]
 }
 
 model User {
@@ -125,7 +128,9 @@ model User {
   school  School?  @relation(fields: [schoolId], references: [id])
   teacher Teacher?
   student Student?
+  parent  Parent?
   notifications Notification[]
+  auditLogs AuditLog[] @relation("AuditActor")
 
   @@index([schoolId])
   @@index([role])
@@ -165,6 +170,30 @@ model Student {
   user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
   classStudents ClassStudent[]
   submissions   Submission[]
+  parents       ParentStudent[]
+}
+
+model Parent {
+  id        String   @id @default(cuid())
+  userId    String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user     User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  children ParentStudent[]
+}
+
+model ParentStudent {
+  id        String   @id @default(cuid())
+  parentId  String
+  studentId String
+  createdAt DateTime @default(now())
+
+  parent  Parent  @relation(fields: [parentId], references: [id], onDelete: Cascade)
+  student Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  @@unique([parentId, studentId])
+  @@index([studentId])
 }
 
 model Subject {
@@ -325,4 +354,26 @@ model Notification {
 
   @@index([userId, createdAt])
   @@index([userId, readAt])
+}
+
+model AuditLog {
+  id          String   @id @default(cuid())
+  schoolId    String?
+  actorUserId String?
+  actorRole   String
+  action      String
+  entityType  String
+  entityId    String?
+  summary     String
+  metadata    Json?
+  ip          String?
+  createdAt   DateTime @default(now())
+
+  school School? @relation(fields: [schoolId], references: [id], onDelete: SetNull)
+  actor  User?   @relation("AuditActor", fields: [actorUserId], references: [id], onDelete: SetNull)
+
+  @@index([schoolId, createdAt])
+  @@index([createdAt])
+  @@index([action])
+  @@index([entityType])
 }

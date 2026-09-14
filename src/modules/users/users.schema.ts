@@ -44,6 +44,14 @@ export const createStudentSchema = personBaseSchema.extend({
   emergencyContact: z.string().trim().max(150).optional(),
 });
 
+export const createHeadmasterSchema = personBaseSchema;
+
+export const createParentSchema = personBaseSchema.extend({
+  studentIds: z
+    .array(z.string().trim().min(1))
+    .min(1, "Link at least one student"),
+});
+
 export const updateUserStatusSchema = z.object({
   status: z.enum(["ACTIVE", "INACTIVE", "SUSPENDED"], {
     error: "status must be ACTIVE, INACTIVE, or SUSPENDED",
@@ -78,6 +86,8 @@ export const updateUserSchema = z
 
 export type CreateTeacherInput = z.infer<typeof createTeacherSchema>;
 export type CreateStudentInput = z.infer<typeof createStudentSchema>;
+export type CreateHeadmasterInput = z.infer<typeof createHeadmasterSchema>;
+export type CreateParentInput = z.infer<typeof createParentSchema>;
 export type UpdateUserStatusInput = z.infer<typeof updateUserStatusSchema>;
 export type UpdateUserInput = z.infer<typeof updateUserSchema>;
 export type TeacherAssignmentInput = z.infer<typeof teacherAssignmentSchema>;

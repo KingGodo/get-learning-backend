@@ -1,6 +1,7 @@
 import { UserRole } from "../../generated/prisma/client.js";
 import { AppError } from "../../common/errors/AppError.js";
 import { prisma } from "../../config/prisma.js";
+import { getLinkedStudentIds } from "../../common/utils/parent-access.js";
 import { uploadFile } from "../storage/storage.service.js";
 import type { CreateMaterialsInput } from "./materials.schema.js";
 
@@ -53,7 +54,7 @@ async function assertClassAccess(
   classId: string,
   classSchoolId: string,
 ) {
-  if (ctx.role === UserRole.SCHOOL_ADMIN) {
+  if (ctx.role === UserRole.SCHOOL_ADMIN || ctx.role === UserRole.HEADMASTER) {
     if (!ctx.schoolId || ctx.schoolId !== classSchoolId) {
       throw new AppError("Class not found", 404);
     }
@@ -67,6 +68,17 @@ async function assertClassAccess(
   if (ctx.role === UserRole.TEACHER) {
     const teacher = await getTeacherProfile(ctx.userId);
     await assertTeacherOwnsClass(teacher.id, classId);
+    return;
+  }
+
+  if (ctx.role === UserRole.PARENT) {
+    const studentIds = await getLinkedStudentIds(ctx.userId);
+    const enrollment = await prisma.classStudent.findFirst({
+      where: { classId, studentId: { in: studentIds }, status: "ACTIVE" },
+    });
+    if (!enrollment) {
+      throw new AppError("You do not have access to this class", 403);
+    }
     return;
   }
 
@@ -102,7 +114,7 @@ function titleFromFilename(originalname: string) {
     : "";
   const withoutExt = base.replace(/\.[^.]+$/, "").trim();
 
-  // Re-uploaded LMS downloads often keep UUID storage names — don't use those as titles.
+  // Re-uploaded LMS downloads often keep UUID storage names. Do not use those as titles.
   const uuidLike =
     /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}(?:\s*\(\d+\))?$/i;
   if (!withoutExt || uuidLike.test(withoutExt)) {

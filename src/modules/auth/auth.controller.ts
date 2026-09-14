@@ -1,5 +1,6 @@
 import type { Request, Response } from "express";
 import { asyncHandler } from "../../common/utils/asyncHandler.js";
+import { clientIp, writeAuditLog } from "../../common/audit/audit.service.js";
 import * as authService from "./auth.service.js";
 
 export const registerTeacher = asyncHandler(async (req: Request, res: Response) => {
@@ -21,6 +22,16 @@ export const registerStudent = asyncHandler(async (req: Request, res: Response) 
 
 export const login = asyncHandler(async (req: Request, res: Response) => {
   const data = await authService.login(req.body);
+  await writeAuditLog({
+    actorUserId: data.user.id,
+    actorRole: data.user.role,
+    schoolId: data.user.schoolId,
+    action: "AUTH.LOGIN",
+    entityType: "User",
+    entityId: data.user.id,
+    summary: `Signed in as ${data.user.email}`,
+    ip: clientIp(req),
+  });
   res.status(200).json({ success: true, data });
 });
 

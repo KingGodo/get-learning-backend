@@ -49,7 +49,7 @@ export async function listSubjects(ctx: AuthContext) {
     return rows.map((row) => row.subject);
   }
 
-  if (ctx.role === UserRole.SCHOOL_ADMIN) {
+  if (ctx.role === UserRole.SCHOOL_ADMIN || ctx.role === UserRole.HEADMASTER) {
     const schoolId = await requireSchoolId(ctx.schoolId);
     return prisma.subject.findMany({
       where: { schoolId },
@@ -106,7 +106,7 @@ export async function getSubject(
     if (!assigned) {
       throw new AppError("Subject not found", 404);
     }
-  } else if (opts.role === UserRole.SCHOOL_ADMIN) {
+  } else if (opts.role === UserRole.SCHOOL_ADMIN || opts.role === UserRole.HEADMASTER) {
     if (!opts.schoolId || subject.schoolId !== opts.schoolId) {
       throw new AppError("Subject not found", 404);
     }

@@ -27,7 +27,7 @@ router.get(
 router.get(
   "/me",
   authenticate,
-  authorize(UserRole.TEACHER, UserRole.ADMIN, UserRole.SCHOOL_ADMIN),
+  authorize(UserRole.TEACHER, UserRole.ADMIN, UserRole.SCHOOL_ADMIN, UserRole.HEADMASTER, UserRole.PARENT),
   schoolsController.getMySchool,
 );
 

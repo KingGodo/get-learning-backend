@@ -1,5 +1,6 @@
 import type { Request, Response } from "express";
 import { asyncHandler } from "../../common/utils/asyncHandler.js";
+import { clientIp, writeAuditLog } from "../../common/audit/audit.service.js";
 import * as classesService from "./classes.service.js";
 
 function authContext(req: Request) {
@@ -12,6 +13,16 @@ function authContext(req: Request) {
 
 export const create = asyncHandler(async (req: Request, res: Response) => {
   const data = await classesService.createClass(authContext(req), req.body);
+  await writeAuditLog({
+    actorUserId: req.user!.userId,
+    actorRole: req.user!.role,
+    schoolId: data.schoolId ?? req.user!.schoolId,
+    action: "CLASS.CREATE",
+    entityType: "Class",
+    entityId: data.id,
+    summary: `Created class ${data.name}`,
+    ip: clientIp(req),
+  });
   res.status(201).json({ success: true, data });
 });
 

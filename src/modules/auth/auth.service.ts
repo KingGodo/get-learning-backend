@@ -178,6 +178,21 @@ export async function login(input: LoginInput) {
     include: {
       teacher: true,
       student: true,
+      parent: {
+        include: {
+          children: {
+            include: {
+              student: {
+                select: {
+                  id: true,
+                  studentNumber: true,
+                  user: { select: { firstName: true, lastName: true, email: true } },
+                },
+              },
+            },
+          },
+        },
+      },
       school: true,
     },
   });
@@ -220,6 +235,21 @@ export async function getMe(userId: string) {
     include: {
       teacher: true,
       student: true,
+      parent: {
+        include: {
+          children: {
+            include: {
+              student: {
+                select: {
+                  id: true,
+                  studentNumber: true,
+                  user: { select: { firstName: true, lastName: true, email: true } },
+                },
+              },
+            },
+          },
+        },
+      },
       school: true,
     },
   });
@@ -421,7 +451,7 @@ export async function forgotPassword(input: ForgotPasswordInput) {
   const frontendBase = env.FRONTEND_URL.replace(/\/$/, "");
   const resetUrl = `${frontendBase}/reset-password?token=${rawToken}`;
 
-  // No email provider configured yet — log for local/LAN testing.
+  // No email provider configured yet. Log for local/LAN testing.
   console.log(`[auth] Password reset for ${user.email}: ${resetUrl}`);
 
   if (env.NODE_ENV === "development") {

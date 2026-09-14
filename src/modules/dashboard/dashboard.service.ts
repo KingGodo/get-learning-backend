@@ -102,7 +102,7 @@ export async function getDashboard(userId: string, role: UserRole) {
     };
   }
 
-  if (role === UserRole.SCHOOL_ADMIN) {
+  if (role === UserRole.SCHOOL_ADMIN || role === UserRole.HEADMASTER) {
     const user = await prisma.user.findUnique({
       where: { id: userId },
       select: {
@@ -401,6 +401,134 @@ export async function getDashboard(userId: string, role: UserRole) {
     };
   }
 
+  if (role === UserRole.PARENT) {
+    const parent = await prisma.parent.findUnique({
+      where: { userId },
+      include: {
+        user: {
+          select: {
+            firstName: true,
+            lastName: true,
+            email: true,
+            phoneNumber: true,
+            school: {
+              select: {
+                id: true,
+                name: true,
+                code: true,
+                email: true,
+                phoneNumber: true,
+                city: true,
+                province: true,
+                address: true,
+                status: true,
+              },
+            },
+          },
+        },
+        children: {
+          include: {
+            student: {
+              select: {
+                id: true,
+                studentNumber: true,
+                user: {
+                  select: {
+                    firstName: true,
+                    lastName: true,
+                    email: true,
+                  },
+                },
+                classStudents: {
+                  where: { status: "ACTIVE" },
+                  include: {
+                    class: {
+                      select: {
+                        id: true,
+                        name: true,
+                        subject: { select: { name: true, code: true } },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+    });
+
+    if (!parent) {
+      throw new AppError("Parent profile not found", 404);
+    }
+
+    const studentIds = parent.children.map((row) => row.student.id);
+
+    const [upcomingDeadlines, recentSubmissions] = studentIds.length
+      ? await Promise.all([
+          prisma.assignment.findMany({
+            where: {
+              status: "PUBLISHED",
+              dueDate: { gte: new Date() },
+              class: {
+                classStudents: {
+                  some: { studentId: { in: studentIds }, status: "ACTIVE" },
+                },
+              },
+            },
+            orderBy: { dueDate: "asc" },
+            take: 8,
+            select: {
+              id: true,
+              title: true,
+              dueDate: true,
+              class: { select: { id: true, name: true } },
+            },
+          }),
+          prisma.submission.findMany({
+            where: { studentId: { in: studentIds } },
+            include: {
+              assignment: {
+                select: { id: true, title: true, dueDate: true, totalMarks: true },
+              },
+              student: {
+                include: {
+                  user: { select: { firstName: true, lastName: true } },
+                },
+              },
+            },
+            orderBy: { submittedAt: "desc" },
+            take: 8,
+          }),
+        ])
+      : [[], []];
+
+    return {
+      role,
+      profile: {
+        firstName: parent.user.firstName,
+        lastName: parent.user.lastName,
+        email: parent.user.email,
+        phoneNumber: parent.user.phoneNumber,
+      },
+      school: parent.user.school,
+      children: parent.children.map((row) => ({
+        id: row.student.id,
+        studentNumber: row.student.studentNumber,
+        firstName: row.student.user.firstName,
+        lastName: row.student.user.lastName,
+        email: row.student.user.email,
+        classes: row.student.classStudents.map((cs) => ({
+          id: cs.class.id,
+          name: cs.class.name,
+          subject: cs.class.subject,
+        })),
+      })),
+      upcomingDeadlines,
+      recentSubmissions,
+    };
+  }
+
   const student = await prisma.student.findUnique({ where: { userId } });
   if (!student) {
     throw new AppError("Student profile not found", 404);
@@ -435,7 +563,7 @@ export async function getDashboard(userId: string, role: UserRole) {
               some: { studentId: student.id, status: "ACTIVE" },
             },
           },
-          // Only work still waiting on the student — submitted items belong in Recent
+          // Only work still waiting on the student. Submitted items belong in Recent
           NOT: {
             submissions: {
               some: { studentId: student.id },

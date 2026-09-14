@@ -12,7 +12,7 @@ export function validate(schema: ZodType, part: RequestPart = "body") {
       if (part === "body") {
         req.body = parsed;
       } else {
-        // query/params are getter-only on IncomingMessage in newer Node/Express —
+        // query/params are getter-only on IncomingMessage in newer Node/Express.
         // mutate the existing object instead of replacing it
         const current = req[part] as Record<string, unknown>;
         for (const key of Object.keys(current)) {

@@ -35,7 +35,7 @@ Protected routes require:
 Authorization: Bearer <jwt_token>
 ```
 
-JWT payload contains: `userId`, `role` (`TEACHER` | `STUDENT` | `ADMIN`), `schoolId` (may be `null` until a student joins a class).
+JWT payload contains: `userId`, `role` (`ADMIN` | `SCHOOL_ADMIN` | `HEADMASTER` | `TEACHER` | `STUDENT` | `PARENT`), `schoolId` (may be `null`).
 
 ### Seeded system admin
 
@@ -501,9 +501,9 @@ Auth required.
 Request validation is done with **Zod** in each module (`*.schema.ts`) via the `validate` middleware.
 
 Validated layers:
-- **body** — create/update/login/register/join/submit payloads
-- **params** — `:id`, `:code`
-- **query** — `classId`, `assignmentId`
+- **body**: create/update/login/register/join/submit payloads
+- **params**: `:id`, `:code`
+- **query**: `classId`, `assignmentId`
 
 Invalid input returns `422` with field-level `errors`.
 

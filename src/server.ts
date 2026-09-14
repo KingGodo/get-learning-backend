@@ -48,3 +48,4 @@ async function start() {
 }
 
 void start();
+// nodemon reload trigger

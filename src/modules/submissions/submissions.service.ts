@@ -1,6 +1,7 @@
 import { UserRole } from "../../generated/prisma/client.js";
 import { AppError } from "../../common/errors/AppError.js";
 import { prisma } from "../../config/prisma.js";
+import { getLinkedStudentIds } from "../../common/utils/parent-access.js";
 import { uploadFile } from "../storage/storage.service.js";
 import {
   notifyStudentOfGrade,
@@ -142,7 +143,7 @@ export async function listSubmissions(
   role: UserRole,
   assignmentId?: string,
 ) {
-  if (role === UserRole.SCHOOL_ADMIN) {
+  if (role === UserRole.SCHOOL_ADMIN || role === UserRole.HEADMASTER) {
     const user = await prisma.user.findUnique({ where: { id: userId }, select: { schoolId: true } });
     if (!user?.schoolId) return [];
     return prisma.submission.findMany({
@@ -175,6 +176,34 @@ export async function listSubmissions(
     return prisma.submission.findMany({
       where: {
         assignment: { teacherId: teacher.id },
+        ...(assignmentId ? { assignmentId } : {}),
+      },
+      include: {
+        assignment: {
+          select: {
+            id: true,
+            title: true,
+            dueDate: true,
+            totalMarks: true,
+            class: { select: { id: true, name: true } },
+          },
+        },
+        student: {
+          include: {
+            user: { select: { firstName: true, lastName: true, email: true } },
+          },
+        },
+      },
+      orderBy: { submittedAt: "desc" },
+    });
+  }
+
+  if (role === UserRole.PARENT) {
+    const studentIds = await getLinkedStudentIds(userId);
+    if (studentIds.length === 0) return [];
+    return prisma.submission.findMany({
+      where: {
+        studentId: { in: studentIds },
         ...(assignmentId ? { assignmentId } : {}),
       },
       include: {
@@ -234,7 +263,7 @@ export async function getSubmission(userId: string, role: UserRole, id: string) 
     throw new AppError("Submission not found", 404);
   }
 
-  if (role === UserRole.SCHOOL_ADMIN) {
+  if (role === UserRole.SCHOOL_ADMIN || role === UserRole.HEADMASTER) {
     const user = await prisma.user.findUnique({ where: { id: userId }, select: { schoolId: true } });
     if (!user?.schoolId || submission.assignment.classId == null) {
       throw new AppError("Submission not found", 404);
@@ -246,6 +275,11 @@ export async function getSubmission(userId: string, role: UserRole, id: string) 
   } else if (role === UserRole.TEACHER || role === UserRole.ADMIN) {
     const teacher = await getTeacherProfile(userId);
     if (submission.assignment.teacherId !== teacher.id) {
+      throw new AppError("You do not have access to this submission", 403);
+    }
+  } else if (role === UserRole.PARENT) {
+    const studentIds = await getLinkedStudentIds(userId);
+    if (!studentIds.includes(submission.studentId)) {
       throw new AppError("You do not have access to this submission", 403);
     }
   } else {

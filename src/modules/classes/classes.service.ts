@@ -1,4 +1,6 @@
 import { UserRole } from "../../generated/prisma/client.js";
+import { canViewSchoolWide, isParent } from "../../common/utils/roles.js";
+import { getLinkedStudentIds } from "../../common/utils/parent-access.js";
 import { AppError } from "../../common/errors/AppError.js";
 import { newClassCode } from "../../common/utils/codes.js";
 import { signToken } from "../../common/utils/tokens.js";
@@ -70,7 +72,7 @@ export async function createClass(ctx: AuthContext, input: CreateClassInput) {
 }
 
 export async function listMyClasses(ctx: AuthContext) {
-  if (ctx.role === UserRole.SCHOOL_ADMIN) {
+  if (canViewSchoolWide(ctx.role) && ctx.role !== UserRole.ADMIN) {
     const schoolId = await requireSchoolId(ctx.schoolId);
     return prisma.class.findMany({
       where: { schoolId },
@@ -110,6 +112,23 @@ export async function listMyClasses(ctx: AuthContext) {
       where: {
         classStudents: {
           some: { studentId: student.id, status: "ACTIVE" },
+        },
+      },
+      include: {
+        subject: true,
+        _count: { select: { classStudents: true, assignments: true } },
+      },
+      orderBy: { createdAt: "desc" },
+    });
+  }
+
+  if (isParent(ctx.role)) {
+    const studentIds = await getLinkedStudentIds(ctx.userId);
+    if (studentIds.length === 0) return [];
+    return prisma.class.findMany({
+      where: {
+        classStudents: {
+          some: { studentId: { in: studentIds }, status: "ACTIVE" },
         },
       },
       include: {
@@ -300,7 +319,7 @@ async function assertClassAccess(
   classId: string,
   classSchoolId: string,
 ) {
-  if (ctx.role === UserRole.SCHOOL_ADMIN) {
+  if (ctx.role === UserRole.SCHOOL_ADMIN || ctx.role === UserRole.HEADMASTER) {
     if (!ctx.schoolId || ctx.schoolId !== classSchoolId) {
       throw new AppError("Class not found", 404);
     }
@@ -313,6 +332,17 @@ async function assertClassAccess(
 
   if (ctx.role === UserRole.TEACHER) {
     await assertTeacherOwnsClass(ctx.userId, classId);
+    return;
+  }
+
+  if (ctx.role === UserRole.PARENT) {
+    const studentIds = await getLinkedStudentIds(ctx.userId);
+    const enrollment = await prisma.classStudent.findFirst({
+      where: { classId, studentId: { in: studentIds }, status: "ACTIVE" },
+    });
+    if (!enrollment) {
+      throw new AppError("You do not have access to this class", 403);
+    }
     return;
   }
 

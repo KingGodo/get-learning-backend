@@ -1,5 +1,6 @@
 import type { Request, Response } from "express";
 import { asyncHandler } from "../../common/utils/asyncHandler.js";
+import { clientIp, writeAuditLog } from "../../common/audit/audit.service.js";
 import * as submissionsService from "./submissions.service.js";
 
 export const submit = asyncHandler(async (req: Request, res: Response) => {
@@ -37,5 +38,19 @@ export const grade = asyncHandler(async (req: Request, res: Response) => {
     String(req.params.id),
     req.body,
   );
+  await writeAuditLog({
+    actorUserId: req.user!.userId,
+    actorRole: req.user!.role,
+    schoolId: req.user!.schoolId,
+    action: "SUBMISSION.GRADE",
+    entityType: "Submission",
+    entityId: data.id,
+    summary: `Graded submission for ${data.assignment?.title ?? "assignment"} (${data.score})`,
+    metadata: {
+      score: data.score,
+      assignmentId: data.assignmentId,
+    },
+    ip: clientIp(req),
+  });
   res.status(200).json({ success: true, data });
 });
