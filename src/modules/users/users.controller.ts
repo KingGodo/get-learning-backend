@@ -160,6 +160,33 @@ export const update = asyncHandler(async (req: Request, res: Response) => {
   res.status(200).json({ success: true, data });
 });
 
+export const listProfileRequests = asyncHandler(async (req: Request, res: Response) => {
+  const data = await usersService.listTeacherProfileRequests(
+    req.user!.role,
+    req.user!.schoolId,
+  );
+  res.status(200).json({ success: true, data });
+});
+
+export const applyProfileRequest = asyncHandler(async (req: Request, res: Response) => {
+  const data = await usersService.applyTeacherProfileRequest(
+    req.user!.role,
+    req.user!.schoolId,
+    req.params.id as string,
+  );
+  await writeAuditLog({
+    actorUserId: req.user!.userId,
+    actorRole: req.user!.role,
+    schoolId: req.user!.schoolId,
+    action: "USER.PROFILE_CORRECTION",
+    entityType: "TeacherProfileRequest",
+    entityId: data.id,
+    summary: "Applied a teacher profile correction",
+    ip: clientIp(req),
+  });
+  res.status(200).json({ success: true, data });
+});
+
 export const remove = asyncHandler(async (req: Request, res: Response) => {
   const data = await usersService.deleteUser(
     req.user!.role,

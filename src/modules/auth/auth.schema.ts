@@ -113,6 +113,30 @@ export const changeEmailSchema = z.object({
   email: z.email("Valid email is required"),
 });
 
+export const teacherCorrectionSchema = z.object({
+  firstName: z.string().trim().min(1).max(100),
+  lastName: z.string().trim().min(1).max(100),
+  phoneNumber: phoneSchema,
+  department: z.string().trim().max(100).optional(),
+  qualification: z.string().trim().max(200).optional(),
+  note: z.string().trim().max(1000).optional(),
+});
+
+export const setInitialPasswordSchema = z
+  .object({
+    password: passwordSchema,
+    confirmPassword: z.string().min(1, "confirmPassword is required"),
+  })
+  .superRefine((data, ctx) => {
+    if (data.password !== data.confirmPassword) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["confirmPassword"],
+        message: "Passwords do not match",
+      });
+    }
+  });
+
 export type RegisterTeacherInput = z.infer<typeof registerTeacherSchema>;
 export type RegisterStudentInput = z.infer<typeof registerStudentSchema>;
 export type LoginInput = z.infer<typeof loginSchema>;
@@ -122,3 +146,5 @@ export type UpdateProfileInput = z.infer<typeof updateProfileSchema>;
 export type ChangePasswordInput = z.infer<typeof changePasswordSchema>;
 export type VerifyPasswordInput = z.infer<typeof verifyPasswordSchema>;
 export type ChangeEmailInput = z.infer<typeof changeEmailSchema>;
+export type TeacherCorrectionInput = z.infer<typeof teacherCorrectionSchema>;
+export type SetInitialPasswordInput = z.infer<typeof setInitialPasswordSchema>;

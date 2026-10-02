@@ -17,6 +17,7 @@ import type {
   UpdateUserStatusInput,
 } from "./users.schema.js";
 import { canManageUsers, canViewUsers } from "../../common/utils/roles.js";
+import { createNotification } from "../notifications/notifications.service.js";
 
 const MANAGEABLE_ROLES: UserRole[] = [
   UserRole.HEADMASTER,
@@ -907,4 +908,81 @@ export async function deleteUser(
   });
 
   return sanitizeUser(deleted);
+}
+
+export async function listTeacherProfileRequests(
+  requesterRole: UserRole,
+  requesterSchoolId: string | null,
+) {
+  assertCanManageUsers(requesterRole);
+  const where =
+    requesterRole === UserRole.ADMIN
+      ? { status: "PENDING" }
+      : { status: "PENDING", schoolId: requesterSchoolId ?? "__none__" };
+
+  return prisma.teacherProfileRequest.findMany({
+    where,
+    orderBy: { createdAt: "desc" },
+    include: {
+      teacher: {
+        select: { id: true, firstName: true, lastName: true, email: true },
+      },
+      school: { select: { id: true, name: true } },
+    },
+  });
+}
+
+export async function applyTeacherProfileRequest(
+  requesterRole: UserRole,
+  requesterSchoolId: string | null,
+  requestId: string,
+) {
+  assertCanManageUsers(requesterRole);
+  const request = await prisma.teacherProfileRequest.findUnique({
+    where: { id: requestId },
+    include: { teacher: { include: { teacher: true } } },
+  });
+  if (!request || request.status !== "PENDING") {
+    throw new AppError("Correction request not found", 404);
+  }
+  if (
+    requesterRole === UserRole.SCHOOL_ADMIN &&
+    request.schoolId !== requesterSchoolId
+  ) {
+    throw new AppError("You do not have permission to perform this action", 403);
+  }
+
+  await prisma.$transaction(async (tx) => {
+    await tx.user.update({
+      where: { id: request.teacherUserId },
+      data: {
+        firstName: request.firstName,
+        lastName: request.lastName,
+        phoneNumber: request.phoneNumber,
+      },
+    });
+    if (request.teacher.teacher) {
+      await tx.teacher.update({
+        where: { userId: request.teacherUserId },
+        data: {
+          department: request.department,
+          qualification: request.qualification,
+        },
+      });
+    }
+    await tx.teacherProfileRequest.update({
+      where: { id: request.id },
+      data: { status: "APPLIED", resolvedAt: new Date() },
+    });
+  });
+
+  await createNotification({
+    userId: request.teacherUserId,
+    type: "GENERAL",
+    title: "Profile updated",
+    body: "Your school admin applied the corrections. Review your details, then set your password.",
+    href: "/welcome",
+  });
+
+  return { id: request.id, status: "APPLIED" };
 }

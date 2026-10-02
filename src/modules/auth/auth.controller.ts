@@ -71,3 +71,18 @@ export const resetPassword = asyncHandler(async (req: Request, res: Response) =>
   const data = await authService.resetPassword(req.body);
   res.status(200).json({ success: true, data });
 });
+
+export const teacherOnboarding = asyncHandler(async (req: Request, res: Response) => {
+  const data = await authService.getTeacherOnboarding(req.user!.userId);
+  res.status(200).json({ success: true, data });
+});
+
+export const teacherCorrections = asyncHandler(async (req: Request, res: Response) => {
+  const data = await authService.submitTeacherCorrections(req.user!.userId, req.body);
+  res.status(201).json({ success: true, data });
+});
+
+export const setInitialPassword = asyncHandler(async (req: Request, res: Response) => {
+  const data = await authService.setInitialPassword(req.user!.userId, req.body);
+  res.status(200).json({ success: true, data });
+});

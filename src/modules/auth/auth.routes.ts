@@ -8,6 +8,8 @@ import {
   forgotPasswordSchema,
   loginSchema,
   resetPasswordSchema,
+  setInitialPasswordSchema,
+  teacherCorrectionSchema,
   updateProfileSchema,
   verifyPasswordSchema,
 } from "./auth.schema.js";
@@ -26,6 +28,26 @@ router.post(
   "/reset-password",
   validate(resetPasswordSchema),
   authController.resetPassword,
+);
+
+router.get(
+  "/teacher-onboarding",
+  authenticate,
+  authController.teacherOnboarding,
+);
+
+router.post(
+  "/teacher-onboarding/corrections",
+  authenticate,
+  validate(teacherCorrectionSchema),
+  authController.teacherCorrections,
+);
+
+router.post(
+  "/teacher-onboarding/password",
+  authenticate,
+  validate(setInitialPasswordSchema),
+  authController.setInitialPassword,
 );
 
 router.get("/me", authenticate, authController.me);

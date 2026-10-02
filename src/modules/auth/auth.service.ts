@@ -6,6 +6,7 @@ import { newEmployeeNumber, newStudentNumber } from "../../common/utils/codes.js
 import { signToken } from "../../common/utils/tokens.js";
 import { env } from "../../config/env.js";
 import { prisma } from "../../config/prisma.js";
+import { createNotifications } from "../notifications/notifications.service.js";
 import type {
   ChangeEmailInput,
   ChangePasswordInput,
@@ -14,6 +15,8 @@ import type {
   RegisterStudentInput,
   RegisterTeacherInput,
   ResetPasswordInput,
+  SetInitialPasswordInput,
+  TeacherCorrectionInput,
   UpdateProfileInput,
   VerifyPasswordInput,
 } from "./auth.schema.js";
@@ -489,4 +492,149 @@ export async function resetPassword(input: ResetPasswordInput) {
   });
 
   return { message: "Password updated. You can sign in with your new password." };
+}
+
+async function requireFirstLoginTeacher(userId: string) {
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    include: { teacher: true },
+  });
+  if (!user || user.deletedAt || !user.teacher) {
+    throw new AppError("Teacher profile not found", 404);
+  }
+  if (user.role !== UserRole.TEACHER) {
+    throw new AppError("This step is only for teachers", 403);
+  }
+  if (!user.mustChangePassword) {
+    throw new AppError("Your account is already set up", 400);
+  }
+  if (!user.schoolId) {
+    throw new AppError("Teacher is not linked to a school", 400);
+  }
+  return user;
+}
+
+export async function getTeacherOnboarding(userId: string) {
+  const user = await requireFirstLoginTeacher(userId);
+  const [subjects, classes, pending] = await Promise.all([
+    prisma.teacherSubject.findMany({
+      where: { teacherId: user.teacher!.id },
+      include: { subject: { select: { id: true, name: true, code: true } } },
+      orderBy: { subject: { name: "asc" } },
+    }),
+    prisma.classTeacher.findMany({
+      where: { teacherId: user.teacher!.id },
+      include: {
+        class: {
+          select: {
+            id: true,
+            name: true,
+            subject: { select: { name: true } },
+          },
+        },
+      },
+    }),
+    prisma.teacherProfileRequest.findFirst({
+      where: { teacherUserId: user.id, status: "PENDING" },
+      orderBy: { createdAt: "desc" },
+    }),
+  ]);
+
+  return {
+    profile: {
+      firstName: user.firstName,
+      lastName: user.lastName,
+      email: user.email,
+      phoneNumber: user.phoneNumber,
+      gender: user.gender,
+      department: user.teacher!.department,
+      qualification: user.teacher!.qualification,
+      employeeNumber: user.teacher!.employeeNumber,
+      schoolName: (
+        await prisma.school.findUnique({
+          where: { id: user.schoolId! },
+          select: { name: true },
+        })
+      )?.name ?? null,
+    },
+    subjects: subjects.map((row) => row.subject),
+    classes: classes.map((row) => ({
+      id: row.class.id,
+      name: row.class.name,
+      subjectName: row.class.subject?.name ?? null,
+    })),
+    pendingRequest: pending,
+  };
+}
+
+export async function submitTeacherCorrections(
+  userId: string,
+  input: TeacherCorrectionInput,
+) {
+  const user = await requireFirstLoginTeacher(userId);
+  const existing = await prisma.teacherProfileRequest.findFirst({
+    where: { teacherUserId: user.id, status: "PENDING" },
+  });
+  if (existing) {
+    throw new AppError("A correction is already waiting for your school admin", 409);
+  }
+
+  const request = await prisma.teacherProfileRequest.create({
+    data: {
+      schoolId: user.schoolId!,
+      teacherUserId: user.id,
+      firstName: input.firstName,
+      lastName: input.lastName,
+      phoneNumber: input.phoneNumber,
+      department: input.department || null,
+      qualification: input.qualification || null,
+      note: input.note || null,
+    },
+  });
+
+  const admins = await prisma.user.findMany({
+    where: {
+      schoolId: user.schoolId!,
+      role: UserRole.SCHOOL_ADMIN,
+      deletedAt: null,
+      status: "ACTIVE",
+    },
+    select: { id: true },
+  });
+
+  await createNotifications(
+    admins.map((admin) => ({
+      userId: admin.id,
+      type: "GENERAL" as const,
+      title: "Teacher profile correction",
+      body: `${user.firstName} ${user.lastName} asked you to review their profile.`,
+      href: "/users/corrections",
+    })),
+  );
+
+  return request;
+}
+
+export async function setInitialPassword(
+  userId: string,
+  input: SetInitialPasswordInput,
+) {
+  const user = await requireFirstLoginTeacher(userId);
+  const pending = await prisma.teacherProfileRequest.findFirst({
+    where: { teacherUserId: user.id, status: "PENDING" },
+  });
+  if (pending) {
+    throw new AppError(
+      "Your school admin still needs to review the corrections you sent",
+      400,
+    );
+  }
+
+  const passwordHash = await bcrypt.hash(input.password, 10);
+  await prisma.user.update({
+    where: { id: user.id },
+    data: { password: passwordHash, mustChangePassword: false },
+  });
+
+  return getMe(user.id);
 }

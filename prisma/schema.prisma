@@ -99,6 +99,7 @@ model School {
   classes Class[]
   subjects Subject[]
   auditLogs AuditLog[]
+  teacherProfileRequests TeacherProfileRequest[]
 }
 
 model User {
@@ -131,6 +132,7 @@ model User {
   parent  Parent?
   notifications Notification[]
   auditLogs AuditLog[] @relation("AuditActor")
+  teacherProfileRequests TeacherProfileRequest[]
 
   @@index([schoolId])
   @@index([role])
@@ -338,6 +340,27 @@ model Submission {
 
   @@unique([assignmentId, studentId])
   @@index([studentId])
+}
+
+model TeacherProfileRequest {
+  id            String    @id @default(cuid())
+  schoolId      String
+  teacherUserId String
+  status        String    @default("PENDING")
+  firstName     String
+  lastName      String
+  phoneNumber   String
+  department    String?
+  qualification String?
+  note          String?
+  createdAt     DateTime  @default(now())
+  resolvedAt    DateTime?
+
+  school  School @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  teacher User   @relation(fields: [teacherUserId], references: [id], onDelete: Cascade)
+
+  @@index([schoolId, status])
+  @@index([teacherUserId, status])
 }
 
 model Notification {

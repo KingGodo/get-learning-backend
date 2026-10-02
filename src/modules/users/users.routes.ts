@@ -43,6 +43,17 @@ router.post(
   usersController.createParent,
 );
 router.get(
+  "/profile-requests",
+  authorize(UserRole.ADMIN, UserRole.SCHOOL_ADMIN),
+  usersController.listProfileRequests,
+);
+router.post(
+  "/profile-requests/:id/apply",
+  authorize(UserRole.ADMIN, UserRole.SCHOOL_ADMIN),
+  validate(idParamSchema, "params"),
+  usersController.applyProfileRequest,
+);
+router.get(
   "/:id",
   authorize(UserRole.ADMIN, UserRole.SCHOOL_ADMIN, UserRole.HEADMASTER),
   validate(idParamSchema, "params"),
