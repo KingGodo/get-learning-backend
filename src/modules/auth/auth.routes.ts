@@ -9,6 +9,7 @@ import {
   loginSchema,
   resetPasswordSchema,
   setInitialPasswordSchema,
+  studentCorrectionSchema,
   teacherCorrectionSchema,
   updateProfileSchema,
   verifyPasswordSchema,
@@ -45,6 +46,26 @@ router.post(
 
 router.post(
   "/teacher-onboarding/password",
+  authenticate,
+  validate(setInitialPasswordSchema),
+  authController.setInitialPassword,
+);
+
+router.get(
+  "/student-onboarding",
+  authenticate,
+  authController.studentOnboarding,
+);
+
+router.post(
+  "/student-onboarding/corrections",
+  authenticate,
+  validate(studentCorrectionSchema),
+  authController.studentCorrections,
+);
+
+router.post(
+  "/student-onboarding/password",
   authenticate,
   validate(setInitialPasswordSchema),
   authController.setInitialPassword,

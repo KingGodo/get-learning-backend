@@ -16,6 +16,7 @@ import type {
   RegisterTeacherInput,
   ResetPasswordInput,
   SetInitialPasswordInput,
+  StudentCorrectionInput,
   TeacherCorrectionInput,
   UpdateProfileInput,
   VerifyPasswordInput,
@@ -615,14 +616,162 @@ export async function submitTeacherCorrections(
   return request;
 }
 
+async function requireFirstLoginStudent(userId: string) {
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    include: { student: true },
+  });
+  if (!user || user.deletedAt || !user.student) {
+    throw new AppError("Student profile not found", 404);
+  }
+  if (user.role !== UserRole.STUDENT) {
+    throw new AppError("This step is only for students", 403);
+  }
+  if (!user.mustChangePassword) {
+    throw new AppError("Your account is already set up", 400);
+  }
+  if (!user.schoolId) {
+    throw new AppError("Student is not linked to a school", 400);
+  }
+  return user;
+}
+
+async function schoolName(schoolId: string) {
+  const school = await prisma.school.findUnique({
+    where: { id: schoolId },
+    select: { name: true },
+  });
+  return school?.name ?? null;
+}
+
+async function notifySchoolAdmins(
+  schoolId: string,
+  title: string,
+  body: string,
+) {
+  const admins = await prisma.user.findMany({
+    where: {
+      schoolId,
+      role: UserRole.SCHOOL_ADMIN,
+      deletedAt: null,
+      status: "ACTIVE",
+    },
+    select: { id: true },
+  });
+  await createNotifications(
+    admins.map((admin) => ({
+      userId: admin.id,
+      type: "GENERAL" as const,
+      title,
+      body,
+      href: "/users/corrections",
+    })),
+  );
+}
+
+export async function getStudentOnboarding(userId: string) {
+  const user = await requireFirstLoginStudent(userId);
+  const [classes, pending] = await Promise.all([
+    prisma.classStudent.findMany({
+      where: { studentId: user.student!.id, status: "ACTIVE" },
+      include: {
+        class: {
+          select: {
+            id: true,
+            name: true,
+            subject: { select: { name: true } },
+          },
+        },
+      },
+    }),
+    prisma.studentProfileRequest.findFirst({
+      where: { studentUserId: user.id, status: "PENDING" },
+      orderBy: { createdAt: "desc" },
+    }),
+  ]);
+
+  return {
+    profile: {
+      firstName: user.firstName,
+      lastName: user.lastName,
+      email: user.email,
+      phoneNumber: user.phoneNumber,
+      gender: user.gender,
+      studentNumber: user.student!.studentNumber,
+      guardianName: user.student!.guardianName,
+      guardianPhone: user.student!.guardianPhone,
+      guardianEmail: user.student!.guardianEmail,
+      emergencyContact: user.student!.emergencyContact,
+      schoolName: await schoolName(user.schoolId!),
+    },
+    classes: classes.map((row) => ({
+      id: row.class.id,
+      name: row.class.name,
+      subjectName: row.class.subject?.name ?? null,
+    })),
+    pendingRequest: pending,
+  };
+}
+
+export async function submitStudentCorrections(
+  userId: string,
+  input: StudentCorrectionInput,
+) {
+  const user = await requireFirstLoginStudent(userId);
+  const existing = await prisma.studentProfileRequest.findFirst({
+    where: { studentUserId: user.id, status: "PENDING" },
+  });
+  if (existing) {
+    throw new AppError("A correction is already waiting for your school admin", 409);
+  }
+
+  const request = await prisma.studentProfileRequest.create({
+    data: {
+      schoolId: user.schoolId!,
+      studentUserId: user.id,
+      firstName: input.firstName,
+      lastName: input.lastName,
+      phoneNumber: input.phoneNumber,
+      guardianName: input.guardianName,
+      guardianPhone: input.guardianPhone,
+      guardianEmail: input.guardianEmail || null,
+      emergencyContact: input.emergencyContact || null,
+      note: input.note || null,
+    },
+  });
+
+  await notifySchoolAdmins(
+    user.schoolId!,
+    "Student profile correction",
+    `${user.firstName} ${user.lastName} asked you to review their profile.`,
+  );
+
+  return request;
+}
+
 export async function setInitialPassword(
   userId: string,
   input: SetInitialPasswordInput,
 ) {
-  const user = await requireFirstLoginTeacher(userId);
-  const pending = await prisma.teacherProfileRequest.findFirst({
-    where: { teacherUserId: user.id, status: "PENDING" },
-  });
+  const user = await prisma.user.findUnique({ where: { id: userId } });
+  if (!user || user.deletedAt) {
+    throw new AppError("Account not found", 404);
+  }
+  if (user.role !== UserRole.TEACHER && user.role !== UserRole.STUDENT) {
+    throw new AppError("This step is only for teachers and students", 403);
+  }
+  if (!user.mustChangePassword) {
+    throw new AppError("Your account is already set up", 400);
+  }
+
+  const pending =
+    user.role === UserRole.TEACHER
+      ? await prisma.teacherProfileRequest.findFirst({
+          where: { teacherUserId: user.id, status: "PENDING" },
+        })
+      : await prisma.studentProfileRequest.findFirst({
+          where: { studentUserId: user.id, status: "PENDING" },
+        });
   if (pending) {
     throw new AppError(
       "Your school admin still needs to review the corrections you sent",

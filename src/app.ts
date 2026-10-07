@@ -21,7 +21,7 @@ app.use(express.urlencoded({ extended: true }));
 app.use("/uploads", express.static(UPLOADS_ROOT));
 
 app.get("/health", (_req, res) => {
-  res.status(200).json({ success: true, message: "GetLeaning API is running" });
+  res.status(200).json({ success: true, message: "takelearning API is running" });
 });
 
 app.use("/api/v1", routes);

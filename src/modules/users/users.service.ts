@@ -920,16 +920,33 @@ export async function listTeacherProfileRequests(
       ? { status: "PENDING" }
       : { status: "PENDING", schoolId: requesterSchoolId ?? "__none__" };
 
-  return prisma.teacherProfileRequest.findMany({
-    where,
-    orderBy: { createdAt: "desc" },
-    include: {
-      teacher: {
-        select: { id: true, firstName: true, lastName: true, email: true },
+  const [teachers, students] = await Promise.all([
+    prisma.teacherProfileRequest.findMany({
+      where,
+      orderBy: { createdAt: "desc" },
+      include: {
+        teacher: {
+          select: { id: true, firstName: true, lastName: true, email: true },
+        },
+        school: { select: { id: true, name: true } },
       },
-      school: { select: { id: true, name: true } },
-    },
-  });
+    }),
+    prisma.studentProfileRequest.findMany({
+      where,
+      orderBy: { createdAt: "desc" },
+      include: {
+        student: {
+          select: { id: true, firstName: true, lastName: true, email: true },
+        },
+        school: { select: { id: true, name: true } },
+      },
+    }),
+  ]);
+
+  return [
+    ...teachers.map((item) => ({ kind: "TEACHER" as const, ...item })),
+    ...students.map((item) => ({ kind: "STUDENT" as const, ...item })),
+  ].sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
 }
 
 export async function applyTeacherProfileRequest(
@@ -938,6 +955,17 @@ export async function applyTeacherProfileRequest(
   requestId: string,
 ) {
   assertCanManageUsers(requesterRole);
+  const studentRequest = await prisma.studentProfileRequest.findUnique({
+    where: { id: requestId },
+  });
+  if (studentRequest) {
+    return applyStudentProfileRequest(
+      requesterRole,
+      requesterSchoolId,
+      requestId,
+    );
+  }
+
   const request = await prisma.teacherProfileRequest.findUnique({
     where: { id: requestId },
     include: { teacher: { include: { teacher: true } } },
@@ -978,6 +1006,62 @@ export async function applyTeacherProfileRequest(
 
   await createNotification({
     userId: request.teacherUserId,
+    type: "GENERAL",
+    title: "Profile updated",
+    body: "Your school admin applied the corrections. Review your details, then set your password.",
+    href: "/welcome",
+  });
+
+  return { id: request.id, status: "APPLIED" };
+}
+
+async function applyStudentProfileRequest(
+  requesterRole: UserRole,
+  requesterSchoolId: string | null,
+  requestId: string,
+) {
+  const request = await prisma.studentProfileRequest.findUnique({
+    where: { id: requestId },
+    include: { student: { include: { student: true } } },
+  });
+  if (!request || request.status !== "PENDING") {
+    throw new AppError("Correction request not found", 404);
+  }
+  if (
+    requesterRole === UserRole.SCHOOL_ADMIN &&
+    request.schoolId !== requesterSchoolId
+  ) {
+    throw new AppError("You do not have permission to perform this action", 403);
+  }
+
+  await prisma.$transaction(async (tx) => {
+    await tx.user.update({
+      where: { id: request.studentUserId },
+      data: {
+        firstName: request.firstName,
+        lastName: request.lastName,
+        phoneNumber: request.phoneNumber,
+      },
+    });
+    if (request.student.student) {
+      await tx.student.update({
+        where: { userId: request.studentUserId },
+        data: {
+          guardianName: request.guardianName,
+          guardianPhone: request.guardianPhone,
+          guardianEmail: request.guardianEmail,
+          emergencyContact: request.emergencyContact,
+        },
+      });
+    }
+    await tx.studentProfileRequest.update({
+      where: { id: request.id },
+      data: { status: "APPLIED", resolvedAt: new Date() },
+    });
+  });
+
+  await createNotification({
+    userId: request.studentUserId,
     type: "GENERAL",
     title: "Profile updated",
     body: "Your school admin applied the corrections. Review your details, then set your password.",

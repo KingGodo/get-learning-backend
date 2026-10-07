@@ -122,6 +122,19 @@ export const teacherCorrectionSchema = z.object({
   note: z.string().trim().max(1000).optional(),
 });
 
+export const studentCorrectionSchema = z.object({
+  firstName: z.string().trim().min(1).max(100),
+  lastName: z.string().trim().min(1).max(100),
+  phoneNumber: phoneSchema,
+  guardianName: z.string().trim().min(1).max(150),
+  guardianPhone: phoneSchema,
+  guardianEmail: z
+    .union([z.email("Valid guardian email is required"), z.literal("")])
+    .optional(),
+  emergencyContact: z.string().trim().max(150).optional(),
+  note: z.string().trim().max(1000).optional(),
+});
+
 export const setInitialPasswordSchema = z
   .object({
     password: passwordSchema,
@@ -147,4 +160,5 @@ export type ChangePasswordInput = z.infer<typeof changePasswordSchema>;
 export type VerifyPasswordInput = z.infer<typeof verifyPasswordSchema>;
 export type ChangeEmailInput = z.infer<typeof changeEmailSchema>;
 export type TeacherCorrectionInput = z.infer<typeof teacherCorrectionSchema>;
+export type StudentCorrectionInput = z.infer<typeof studentCorrectionSchema>;
 export type SetInitialPasswordInput = z.infer<typeof setInitialPasswordSchema>;

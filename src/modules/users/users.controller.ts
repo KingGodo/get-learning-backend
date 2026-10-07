@@ -181,7 +181,7 @@ export const applyProfileRequest = asyncHandler(async (req: Request, res: Respon
     action: "USER.PROFILE_CORRECTION",
     entityType: "TeacherProfileRequest",
     entityId: data.id,
-    summary: "Applied a teacher profile correction",
+    summary: "Applied a profile correction",
     ip: clientIp(req),
   });
   res.status(200).json({ success: true, data });

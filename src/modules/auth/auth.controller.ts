@@ -82,6 +82,16 @@ export const teacherCorrections = asyncHandler(async (req: Request, res: Respons
   res.status(201).json({ success: true, data });
 });
 
+export const studentOnboarding = asyncHandler(async (req: Request, res: Response) => {
+  const data = await authService.getStudentOnboarding(req.user!.userId);
+  res.status(200).json({ success: true, data });
+});
+
+export const studentCorrections = asyncHandler(async (req: Request, res: Response) => {
+  const data = await authService.submitStudentCorrections(req.user!.userId, req.body);
+  res.status(201).json({ success: true, data });
+});
+
 export const setInitialPassword = asyncHandler(async (req: Request, res: Response) => {
   const data = await authService.setInitialPassword(req.user!.userId, req.body);
   res.status(200).json({ success: true, data });
