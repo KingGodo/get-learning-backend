@@ -5,6 +5,7 @@ import {
   schoolCodeParamSchema,
 } from "../../common/validation/schemas.js";
 import { authenticate, authorize } from "../../middlewares/auth.middleware.js";
+import { uploadImage } from "../../middlewares/upload.middleware.js";
 import { validate } from "../../middlewares/validate.middleware.js";
 import * as schoolsController from "./schools.controller.js";
 import { createSchoolSchema, updateSchoolSchema } from "./schools.schema.js";
@@ -53,6 +54,23 @@ router.patch(
   authorize(UserRole.TEACHER, UserRole.ADMIN, UserRole.SCHOOL_ADMIN),
   validate(updateSchoolSchema),
   schoolsController.updateMySchool,
+);
+
+router.post(
+  "/me/logo",
+  authenticate,
+  authorize(UserRole.ADMIN, UserRole.SCHOOL_ADMIN),
+  uploadImage.single("logo"),
+  schoolsController.uploadLogo,
+);
+
+router.post(
+  "/:id/logo",
+  authenticate,
+  authorize(UserRole.ADMIN),
+  validate(idParamSchema, "params"),
+  uploadImage.single("logo"),
+  schoolsController.uploadLogo,
 );
 
 export default router;

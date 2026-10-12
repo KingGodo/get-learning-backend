@@ -12,13 +12,15 @@ export function validate(schema: ZodType, part: RequestPart = "body") {
       if (part === "body") {
         req.body = parsed;
       } else {
-        // query/params are getter-only on IncomingMessage in newer Node/Express.
-        // mutate the existing object instead of replacing it
-        const current = req[part] as Record<string, unknown>;
-        for (const key of Object.keys(current)) {
-          delete current[key];
-        }
-        Object.assign(current, parsed as object);
+        // Express reads req.query through a prototype getter that parses the URL
+        // again on every access. Writing onto that object is discarded, so
+        // coerced numbers stay strings. An own property shadows the getter.
+        Object.defineProperty(req, part, {
+          value: parsed,
+          writable: true,
+          configurable: true,
+          enumerable: true,
+        });
       }
 
       next();

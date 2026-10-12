@@ -2,6 +2,7 @@ import { z } from "zod";
 
 export const createClassSchema = z.object({
   subjectId: z.string().min(1, "subjectId is required"),
+  teacherId: z.string().min(1, "teacherId is required"),
   name: z.string().trim().min(1, "name is required").max(150),
   description: z.string().trim().max(1000).optional(),
   academicYear: z

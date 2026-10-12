@@ -45,8 +45,8 @@ export async function listAuditLogs(
     where.createdAt = createdAt;
   }
 
-  const page = query.page;
-  const pageSize = query.pageSize;
+  const page = Math.max(1, Math.trunc(Number(query.page)) || 1);
+  const pageSize = Math.min(100, Math.max(1, Math.trunc(Number(query.pageSize)) || 25));
   const skip = (page - 1) * pageSize;
 
   const [total, items] = await Promise.all([

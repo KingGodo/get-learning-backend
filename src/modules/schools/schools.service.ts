@@ -7,6 +7,7 @@ import {
   newTemporaryPassword,
 } from "../../common/utils/codes.js";
 import { prisma } from "../../config/prisma.js";
+import { uploadFile } from "../storage/storage.service.js";
 import type { CreateSchoolInput, UpdateSchoolInput } from "./schools.schema.js";
 
 function sanitizeUser<T extends { password: string }>(user: T) {
@@ -32,6 +33,7 @@ export async function listSchools(role: UserRole) {
       city: true,
       province: true,
       country: true,
+      logo: true,
       status: true,
       createdAt: true,
       updatedAt: true,
@@ -128,6 +130,19 @@ export async function updateMySchool(schoolId: string | null, input: UpdateSchoo
   return prisma.school.update({
     where: { id: schoolId },
     data: input,
+  });
+}
+
+export async function setSchoolLogo(schoolId: string, file: Express.Multer.File) {
+  const school = await prisma.school.findUnique({ where: { id: schoolId } });
+  if (!school) {
+    throw new AppError("School not found", 404);
+  }
+
+  const logo = await uploadFile(`schools/${schoolId}`, file);
+  return prisma.school.update({
+    where: { id: schoolId },
+    data: { logo },
   });
 }
 

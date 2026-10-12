@@ -110,6 +110,14 @@ async function validateAndApplyTeacherAssignments(
   assignments: TeacherAssignmentInput[],
   mode: "create" | "replace",
 ) {
+  if (assignments.length === 0) {
+    if (mode === "replace") {
+      await tx.classTeacher.deleteMany({ where: { teacherId } });
+      await tx.teacherSubject.deleteMany({ where: { teacherId } });
+    }
+    return;
+  }
+
   const subjectIds = assignments.map((a) => a.subjectId);
   const uniqueSubjectIds = new Set(subjectIds);
   if (uniqueSubjectIds.size !== subjectIds.length) {

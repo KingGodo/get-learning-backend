@@ -53,6 +53,44 @@ export const getByCode = asyncHandler(async (req: Request, res: Response) => {
   res.status(200).json({ success: true, data });
 });
 
+export const uploadLogo = asyncHandler(async (req: Request, res: Response) => {
+  if (!req.file) {
+    res.status(400).json({ success: false, message: "Choose a logo image" });
+    return;
+  }
+
+  const schoolId =
+    req.params.id === undefined || req.params.id === "me"
+      ? req.user!.schoolId
+      : (req.params.id as string);
+
+  if (!schoolId) {
+    res.status(404).json({ success: false, message: "School not found" });
+    return;
+  }
+
+  if (req.user!.role !== "ADMIN" && req.user!.schoolId !== schoolId) {
+    res.status(403).json({
+      success: false,
+      message: "You do not have permission to update this school",
+    });
+    return;
+  }
+
+  const data = await schoolsService.setSchoolLogo(schoolId, req.file);
+  await writeAuditLog({
+    actorUserId: req.user!.userId,
+    actorRole: req.user!.role,
+    schoolId: data.id,
+    action: "SCHOOL.UPDATE",
+    entityType: "School",
+    entityId: data.id,
+    summary: `Updated logo for ${data.name}`,
+    ip: clientIp(req),
+  });
+  res.status(200).json({ success: true, data });
+});
+
 export const getById = asyncHandler(async (req: Request, res: Response) => {
   const data = await schoolsService.getSchoolById(
     req.user!.role,

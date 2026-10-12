@@ -9,6 +9,20 @@ const ALLOWED_MIME_TYPES = new Set([
 
 const storage = multer.memoryStorage();
 
+const IMAGE_MIME_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
+
+export const uploadImage = multer({
+  storage,
+  limits: { fileSize: 2 * 1024 * 1024 },
+  fileFilter: (_req, file, cb) => {
+    if (!IMAGE_MIME_TYPES.has(file.mimetype)) {
+      cb(new AppError("Logo must be a JPEG, PNG, or WebP image", 400));
+      return;
+    }
+    cb(null, true);
+  },
+});
+
 export const uploadDocument = multer({
   storage,
   limits: { fileSize: 10 * 1024 * 1024 },

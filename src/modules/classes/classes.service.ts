@@ -1,4 +1,4 @@
-import { UserRole } from "../../generated/prisma/client.js";
+import { TeacherRole, UserRole } from "../../generated/prisma/client.js";
 import { canViewSchoolWide, isParent } from "../../common/utils/roles.js";
 import { getLinkedStudentIds } from "../../common/utils/parent-access.js";
 import { AppError } from "../../common/errors/AppError.js";
@@ -57,17 +57,55 @@ export async function createClass(ctx: AuthContext, input: CreateClassInput) {
     }
   }
 
-  return prisma.class.create({
-    data: {
-      schoolId: subject.schoolId,
-      subjectId: input.subjectId,
-      name: input.name,
-      description: input.description,
-      classCode: newClassCode(),
-      academicYear: input.academicYear,
-      semester: input.semester,
+  const teacher = await prisma.teacher.findUnique({
+    where: { id: input.teacherId },
+    include: {
+      user: { select: { schoolId: true, deletedAt: true, status: true } },
     },
-    include: { subject: true },
+  });
+  if (
+    !teacher ||
+    teacher.user.deletedAt ||
+    teacher.user.status !== "ACTIVE" ||
+    teacher.user.schoolId !== subject.schoolId
+  ) {
+    throw new AppError("Choose a teacher from this school", 400);
+  }
+
+  return prisma.$transaction(async (tx) => {
+    const classRoom = await tx.class.create({
+      data: {
+        schoolId: subject.schoolId,
+        subjectId: input.subjectId,
+        name: input.name,
+        description: input.description,
+        classCode: newClassCode(),
+        academicYear: input.academicYear,
+        semester: input.semester,
+      },
+      include: { subject: true },
+    });
+
+    await tx.classTeacher.create({
+      data: {
+        classId: classRoom.id,
+        teacherId: teacher.id,
+        role: TeacherRole.PRIMARY,
+      },
+    });
+
+    await tx.teacherSubject.upsert({
+      where: {
+        teacherId_subjectId: {
+          teacherId: teacher.id,
+          subjectId: subject.id,
+        },
+      },
+      create: { teacherId: teacher.id, subjectId: subject.id },
+      update: {},
+    });
+
+    return classRoom;
   });
 }
 
