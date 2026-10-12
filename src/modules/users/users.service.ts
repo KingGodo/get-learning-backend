@@ -951,8 +951,23 @@ export async function listTeacherProfileRequests(
     }),
   ]);
 
+  const subjectIds = [...new Set(teachers.flatMap((item) => item.subjectIds))];
+  const subjects = subjectIds.length
+    ? await prisma.subject.findMany({
+        where: { id: { in: subjectIds } },
+        select: { id: true, name: true, code: true },
+      })
+    : [];
+  const subjectById = new Map(subjects.map((subject) => [subject.id, subject]));
+
   return [
-    ...teachers.map((item) => ({ kind: "TEACHER" as const, ...item })),
+    ...teachers.map((item) => ({
+      kind: "TEACHER" as const,
+      ...item,
+      subjects: item.subjectIds
+        .map((id) => subjectById.get(id))
+        .filter((subject) => subject !== undefined),
+    })),
     ...students.map((item) => ({ kind: "STUDENT" as const, ...item })),
   ].sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
 }
@@ -1005,6 +1020,38 @@ export async function applyTeacherProfileRequest(
           qualification: request.qualification,
         },
       });
+
+      const subjectIds = [...new Set(request.subjectIds)];
+      if (subjectIds.length > 0) {
+        const subjects = await tx.subject.findMany({
+          where: { id: { in: subjectIds }, schoolId: request.schoolId },
+          select: { id: true },
+        });
+        if (subjects.length !== subjectIds.length) {
+          throw new AppError("Choose a subject from this school", 400);
+        }
+        const teacherId = request.teacher.teacher.id;
+        await tx.teacherSubject.deleteMany({
+          where: { teacherId, subjectId: { notIn: subjectIds } },
+        });
+        const current = await tx.teacherSubject.findMany({
+          where: { teacherId },
+          select: { subjectId: true },
+        });
+        const have = new Set(current.map((row) => row.subjectId));
+        const missing = subjectIds.filter((subjectId) => !have.has(subjectId));
+        if (missing.length > 0) {
+          await tx.teacherSubject.createMany({
+            data: missing.map((subjectId) => ({ teacherId, subjectId })),
+          });
+        }
+        await tx.classTeacher.deleteMany({
+          where: {
+            teacherId,
+            class: { subjectId: { notIn: subjectIds } },
+          },
+        });
+      }
     }
     await tx.teacherProfileRequest.update({
       where: { id: request.id },

@@ -517,11 +517,16 @@ async function requireFirstLoginTeacher(userId: string) {
 
 export async function getTeacherOnboarding(userId: string) {
   const user = await requireFirstLoginTeacher(userId);
-  const [subjects, classes, pending] = await Promise.all([
+  const [subjects, schoolSubjects, classes, pending] = await Promise.all([
     prisma.teacherSubject.findMany({
       where: { teacherId: user.teacher!.id },
       include: { subject: { select: { id: true, name: true, code: true } } },
       orderBy: { subject: { name: "asc" } },
+    }),
+    prisma.subject.findMany({
+      where: { schoolId: user.schoolId! },
+      select: { id: true, name: true, code: true },
+      orderBy: { name: "asc" },
     }),
     prisma.classTeacher.findMany({
       where: { teacherId: user.teacher!.id },
@@ -559,6 +564,7 @@ export async function getTeacherOnboarding(userId: string) {
       )?.name ?? null,
     },
     subjects: subjects.map((row) => row.subject),
+    schoolSubjects,
     classes: classes.map((row) => ({
       id: row.class.id,
       name: row.class.name,
@@ -580,6 +586,19 @@ export async function submitTeacherCorrections(
     throw new AppError("A correction is already waiting for your school admin", 409);
   }
 
+  const schoolSubjects = await prisma.subject.findMany({
+    where: { schoolId: user.schoolId! },
+    select: { id: true },
+  });
+  const allowed = new Set(schoolSubjects.map((subject) => subject.id));
+  const subjectIds = [...new Set(input.subjectIds)];
+  if (schoolSubjects.length > 0 && subjectIds.length === 0) {
+    throw new AppError("Select the subject you teach", 400);
+  }
+  if (subjectIds.some((id) => !allowed.has(id))) {
+    throw new AppError("Choose a subject from your school", 400);
+  }
+
   const request = await prisma.teacherProfileRequest.create({
     data: {
       schoolId: user.schoolId!,
@@ -589,6 +608,7 @@ export async function submitTeacherCorrections(
       phoneNumber: input.phoneNumber,
       department: input.department || null,
       qualification: input.qualification || null,
+      subjectIds,
       note: input.note || null,
     },
   });

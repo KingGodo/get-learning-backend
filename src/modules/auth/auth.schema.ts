@@ -119,6 +119,7 @@ export const teacherCorrectionSchema = z.object({
   phoneNumber: phoneSchema,
   department: z.string().trim().max(100).optional(),
   qualification: z.string().trim().max(200).optional(),
+  subjectIds: z.array(z.string().trim().min(1)).optional().default([]),
   note: z.string().trim().max(1000).optional(),
 });
 
