@@ -13,9 +13,6 @@ let bucketReady: Promise<void> | null = null;
 
 function publicFileUrl(relativePath: string): string {
   const normalized = relativePath.replace(/\\/g, "/");
-  if (env.PUBLIC_APP_URL) {
-    return `${env.PUBLIC_APP_URL.replace(/\/$/, "")}/uploads/${normalized}`;
-  }
   return `/uploads/${normalized}`;
 }
 
