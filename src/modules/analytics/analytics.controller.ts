@@ -9,3 +9,22 @@ export const teacher = asyncHandler(async (req: Request, res: Response) => {
   );
   res.status(200).json({ success: true, data });
 });
+
+export const performance = asyncHandler(async (req: Request, res: Response) => {
+  const query = req.query as {
+    classId?: string;
+    from?: string;
+    to?: string;
+    compareFrom?: string;
+    compareTo?: string;
+  };
+  const data = await analyticsService.getPerformanceReport(
+    {
+      userId: req.user!.userId,
+      role: req.user!.role,
+      schoolId: req.user!.schoolId,
+    },
+    query,
+  );
+  res.status(200).json({ success: true, data });
+});

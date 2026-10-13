@@ -101,6 +101,7 @@ model School {
   auditLogs AuditLog[]
   teacherProfileRequests TeacherProfileRequest[]
   studentProfileRequests StudentProfileRequest[]
+  chatRooms ChatRoom[]
 }
 
 model User {
@@ -135,6 +136,7 @@ model User {
   auditLogs AuditLog[] @relation("AuditActor")
   teacherProfileRequests TeacherProfileRequest[]
   studentProfileRequests StudentProfileRequest[]
+  chatMessages ChatMessage[]
 
   @@index([schoolId])
   @@index([role])
@@ -157,6 +159,7 @@ model Teacher {
   assignments  Assignment[]
   classMaterials ClassMaterial[]
   gradedSubmissions Submission[] @relation("GradedBy")
+  chatRooms ChatRoom[]
 }
 
 model Student {
@@ -175,6 +178,7 @@ model Student {
   classStudents ClassStudent[]
   submissions   Submission[]
   parents       ParentStudent[]
+  chatRooms     ChatRoom[]
 }
 
 model Parent {
@@ -185,6 +189,7 @@ model Parent {
 
   user     User            @relation(fields: [userId], references: [id], onDelete: Cascade)
   children ParentStudent[]
+  chatRooms ChatRoom[]
 }
 
 model ParentStudent {
@@ -249,6 +254,7 @@ model Class {
   classStudents ClassStudent[]
   assignments   Assignment[]
   materials     ClassMaterial[]
+  chatRoom      ChatRoom?
 
   @@index([schoolId])
   @@index([subjectId])
@@ -297,6 +303,49 @@ model ClassStudent {
 
   @@unique([classId, studentId])
   @@index([studentId])
+}
+
+enum ChatRoomKind {
+  CLASS
+  TEACHER_PARENT
+  HEADMASTER_PARENT
+}
+
+model ChatRoom {
+  id        String       @id @default(cuid())
+  schoolId  String
+  kind      ChatRoomKind
+  classId   String?      @unique
+  teacherId String?
+  parentId  String?
+  studentId String?
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+
+  school   School        @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  class    Class?        @relation(fields: [classId], references: [id], onDelete: Cascade)
+  teacher  Teacher?      @relation(fields: [teacherId], references: [id], onDelete: Cascade)
+  parent   Parent?       @relation(fields: [parentId], references: [id], onDelete: Cascade)
+  student  Student?      @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  messages ChatMessage[]
+
+  @@index([schoolId, kind])
+  @@index([teacherId])
+  @@index([parentId])
+  @@index([studentId])
+}
+
+model ChatMessage {
+  id        String   @id @default(cuid())
+  roomId    String
+  senderId  String
+  body      String
+  createdAt DateTime @default(now())
+
+  room   ChatRoom @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  sender User     @relation(fields: [senderId], references: [id], onDelete: Cascade)
+
+  @@index([roomId, createdAt])
 }
 
 model Assignment {

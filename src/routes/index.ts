@@ -12,6 +12,7 @@ import usersRoutes from "../modules/users/users.routes.js";
 import auditRoutes from "../modules/audit/audit.routes.js";
 import analyticsRoutes from "../modules/analytics/analytics.routes.js";
 import contactRoutes from "../modules/contact/contact.routes.js";
+import chatRoutes from "../modules/chat/chat.routes.js";
 
 const router = Router();
 
@@ -32,5 +33,6 @@ router.use("/users", usersRoutes);
 router.use("/audit", auditRoutes);
 router.use("/analytics", analyticsRoutes);
 router.use("/contact", contactRoutes);
+router.use("/chat", chatRoutes);
 
 export default router;
