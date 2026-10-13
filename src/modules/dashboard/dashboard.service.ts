@@ -35,6 +35,7 @@ export async function getDashboard(userId: string, role: UserRole) {
           email: true,
           city: true,
           province: true,
+          logo: true,
           status: true,
           createdAt: true,
           _count: { select: { users: true, classes: true } },
@@ -121,6 +122,7 @@ export async function getDashboard(userId: string, role: UserRole) {
             city: true,
             province: true,
             address: true,
+            logo: true,
             status: true,
           },
         },
@@ -251,6 +253,7 @@ export async function getDashboard(userId: string, role: UserRole) {
                 city: true,
                 province: true,
                 address: true,
+                logo: true,
                 status: true,
               },
             },
@@ -421,6 +424,7 @@ export async function getDashboard(userId: string, role: UserRole) {
                 city: true,
                 province: true,
                 address: true,
+                logo: true,
                 status: true,
               },
             },
@@ -529,7 +533,16 @@ export async function getDashboard(userId: string, role: UserRole) {
     };
   }
 
-  const student = await prisma.student.findUnique({ where: { userId } });
+  const student = await prisma.student.findUnique({
+    where: { userId },
+    include: {
+      user: {
+        select: {
+          school: { select: { id: true, name: true, logo: true } },
+        },
+      },
+    },
+  });
   if (!student) {
     throw new AppError("Student profile not found", 404);
   }
@@ -591,6 +604,7 @@ export async function getDashboard(userId: string, role: UserRole) {
 
   return {
     role,
+    school: student.user.school,
     joinedClasses,
     activeAssignments,
     upcomingDeadlines,
