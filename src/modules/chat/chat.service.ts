@@ -118,7 +118,12 @@ async function teacherTeachesStudent(teacherId: string, studentId: string) {
   return count > 0;
 }
 
-function summarize(room: RoomRecord, actorUserId: string, role: UserRole) {
+function summarize(
+  room: RoomRecord,
+  actorUserId: string,
+  role: UserRole,
+  unreadCount = 0,
+) {
   const last = room.messages[0];
   let title = "Conversation";
   let subtitle = "Messages";
@@ -148,6 +153,7 @@ function summarize(room: RoomRecord, actorUserId: string, role: UserRole) {
     parentId: room.parentId,
     studentId: room.studentId,
     updatedAt: room.updatedAt.toISOString(),
+    unreadCount,
     lastMessage: last
       ? {
           body: last.body,
@@ -158,6 +164,91 @@ function summarize(room: RoomRecord, actorUserId: string, role: UserRole) {
       : null,
     viewerId: actorUserId,
   };
+}
+
+async function unreadCountsForRooms(userId: string, roomIds: string[]) {
+  const counts = new Map<string, number>();
+  for (const roomId of roomIds) counts.set(roomId, 0);
+  if (roomIds.length === 0) return counts;
+
+  const reads = await prisma.chatRoomRead.findMany({
+    where: { userId, roomId: { in: roomIds } },
+    select: { roomId: true, lastReadAt: true },
+  });
+  const readMap = new Map(reads.map((row) => [row.roomId, row.lastReadAt]));
+
+  const messages = await prisma.chatMessage.findMany({
+    where: {
+      roomId: { in: roomIds },
+      senderId: { not: userId },
+    },
+    select: { roomId: true, createdAt: true },
+  });
+
+  for (const message of messages) {
+    const lastRead = readMap.get(message.roomId);
+    if (!lastRead || message.createdAt.getTime() > lastRead.getTime()) {
+      counts.set(message.roomId, (counts.get(message.roomId) ?? 0) + 1);
+    }
+  }
+  return counts;
+}
+
+async function markRoomRead(userId: string, roomId: string) {
+  const now = new Date();
+  await prisma.chatRoomRead.upsert({
+    where: { roomId_userId: { roomId, userId } },
+    create: { roomId, userId, lastReadAt: now },
+    update: { lastReadAt: now },
+  });
+}
+
+async function roomsForActor(actor: Awaited<ReturnType<typeof loadActor>>) {
+  const filters: Prisma.ChatRoomWhereInput[] = [];
+
+  if (actor.teacher) {
+    filters.push({
+      kind: ChatRoomKind.CLASS,
+      class: { classTeachers: { some: { teacherId: actor.teacher.id } } },
+    });
+    filters.push({
+      kind: ChatRoomKind.TEACHER_PARENT,
+      teacherId: actor.teacher.id,
+    });
+  }
+
+  if (actor.student) {
+    filters.push({
+      kind: ChatRoomKind.CLASS,
+      class: {
+        classStudents: {
+          some: {
+            studentId: actor.student.id,
+            status: EnrollmentStatus.ACTIVE,
+          },
+        },
+      },
+    });
+  }
+
+  if (actor.parent) {
+    filters.push({ parentId: actor.parent.id });
+  }
+
+  if (actor.role === UserRole.HEADMASTER && actor.schoolId) {
+    filters.push({
+      kind: ChatRoomKind.HEADMASTER_PARENT,
+      schoolId: actor.schoolId,
+    });
+  }
+
+  if (filters.length === 0) return [];
+
+  return prisma.chatRoom.findMany({
+    where: { OR: filters },
+    include: roomInclude,
+    orderBy: { updatedAt: "desc" },
+  });
 }
 
 async function findRoom(id: string) {
@@ -244,59 +335,43 @@ async function createOrFind(
 
 export async function getInbox(ctx: ActorContext) {
   const actor = await loadActor(ctx.userId);
-  const filters: Prisma.ChatRoomWhereInput[] = [];
-
-  if (actor.teacher) {
-    filters.push({
-      kind: ChatRoomKind.CLASS,
-      class: { classTeachers: { some: { teacherId: actor.teacher.id } } },
-    });
-    filters.push({
-      kind: ChatRoomKind.TEACHER_PARENT,
-      teacherId: actor.teacher.id,
-    });
-  }
-
-  if (actor.student) {
-    filters.push({
-      kind: ChatRoomKind.CLASS,
-      class: {
-        classStudents: {
-          some: {
-            studentId: actor.student.id,
-            status: EnrollmentStatus.ACTIVE,
-          },
-        },
-      },
-    });
-  }
-
-  if (actor.parent) {
-    filters.push({ parentId: actor.parent.id });
-  }
-
-  if (actor.role === UserRole.HEADMASTER && actor.schoolId) {
-    filters.push({
-      kind: ChatRoomKind.HEADMASTER_PARENT,
-      schoolId: actor.schoolId,
-    });
-  }
-
-  const rooms =
-    filters.length === 0
-      ? []
-      : await prisma.chatRoom.findMany({
-          where: { OR: filters },
-          include: roomInclude,
-          orderBy: { updatedAt: "desc" },
-        });
+  const rooms = await roomsForActor(actor);
+  const unread = await unreadCountsForRooms(
+    actor.id,
+    rooms.map((room) => room.id),
+  );
+  let unreadTotal = 0;
+  for (const count of unread.values()) unreadTotal += count;
 
   const starts = await listStarts(actor);
 
   return {
-    rooms: rooms.map((room) => summarize(room, actor.id, actor.role)),
+    rooms: rooms.map((room) =>
+      summarize(room, actor.id, actor.role, unread.get(room.id) ?? 0),
+    ),
     starts,
+    unreadTotal,
   };
+}
+
+export async function getUnreadTotal(ctx: ActorContext) {
+  const actor = await loadActor(ctx.userId);
+  const rooms = await roomsForActor(actor);
+  const unread = await unreadCountsForRooms(
+    actor.id,
+    rooms.map((room) => room.id),
+  );
+  let unreadCount = 0;
+  for (const count of unread.values()) unreadCount += count;
+  return { unreadCount };
+}
+
+export async function markRead(ctx: ActorContext, roomId: string) {
+  const actor = await loadActor(ctx.userId);
+  const room = await findRoom(roomId);
+  await assertRoomAccess(actor, room);
+  await markRoomRead(actor.id, roomId);
+  return { roomId, unreadCount: 0 };
 }
 
 async function listStarts(actor: Awaited<ReturnType<typeof loadActor>>) {
@@ -639,8 +714,10 @@ export async function listMessages(
   });
   if (!createdAt) rows.reverse();
 
+  await markRoomRead(actor.id, roomId);
+
   return {
-    room: summarize(room, actor.id, actor.role),
+    room: summarize(room, actor.id, actor.role, 0),
     messages: rows.map((message) => ({
       id: message.id,
       body: message.body,

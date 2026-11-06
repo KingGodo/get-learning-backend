@@ -194,7 +194,10 @@ async function resolveTargetSchoolId(
   requesterSchoolId: string | null,
   requestedSchoolId?: string,
 ) {
-  if (requesterRole === UserRole.SCHOOL_ADMIN) {
+  if (
+    requesterRole === UserRole.SCHOOL_ADMIN ||
+    requesterRole === UserRole.HEADMASTER
+  ) {
     if (!requesterSchoolId) {
       throw new AppError("No school associated with this account", 400);
     }
@@ -601,7 +604,13 @@ export async function createParent(
   requesterSchoolId: string | null,
   input: CreateParentInput,
 ) {
-  assertCanManageUsers(requesterRole);
+  if (
+    requesterRole !== UserRole.ADMIN &&
+    requesterRole !== UserRole.SCHOOL_ADMIN &&
+    requesterRole !== UserRole.HEADMASTER
+  ) {
+    throw new AppError("You do not have permission to create parents", 403);
+  }
 
   const schoolId = await resolveTargetSchoolId(
     requesterRole,

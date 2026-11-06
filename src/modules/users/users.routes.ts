@@ -38,7 +38,7 @@ router.post(
 );
 router.post(
   "/parents",
-  authorize(UserRole.ADMIN, UserRole.SCHOOL_ADMIN),
+  authorize(UserRole.ADMIN, UserRole.SCHOOL_ADMIN, UserRole.HEADMASTER),
   validate(createParentSchema),
   usersController.createParent,
 );

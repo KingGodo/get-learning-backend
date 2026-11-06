@@ -16,7 +16,7 @@ export const uploadImage = multer({
   limits: { fileSize: 2 * 1024 * 1024 },
   fileFilter: (_req, file, cb) => {
     if (!IMAGE_MIME_TYPES.has(file.mimetype)) {
-      cb(new AppError("Logo must be a JPEG, PNG, or WebP image", 400));
+      cb(new AppError("Choose a JPEG, PNG, or WebP image", 400));
       return;
     }
     cb(null, true);

@@ -22,12 +22,18 @@ const chatRoles = [
 router.use(authenticate, authorize(...chatRoles));
 
 router.get("/", chatController.inbox);
+router.get("/unread-count", chatController.unreadCount);
 router.post("/rooms", validate(openChatSchema), chatController.open);
 router.get(
   "/rooms/:id/messages",
   validate(idParamSchema, "params"),
   validate(messagesQuerySchema, "query"),
   chatController.messages,
+);
+router.post(
+  "/rooms/:id/read",
+  validate(idParamSchema, "params"),
+  chatController.markRead,
 );
 router.post(
   "/rooms/:id/messages",

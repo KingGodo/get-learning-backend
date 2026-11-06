@@ -7,6 +7,7 @@ import { signToken } from "../../common/utils/tokens.js";
 import { env } from "../../config/env.js";
 import { prisma } from "../../config/prisma.js";
 import { createNotifications } from "../notifications/notifications.service.js";
+import { uploadFile } from "../storage/storage.service.js";
 import type {
   ChangeEmailInput,
   ChangePasswordInput,
@@ -263,6 +264,23 @@ export async function getMe(userId: string) {
   }
 
   return sanitizeUser(user);
+}
+
+export async function setProfileImage(userId: string, file: Express.Multer.File) {
+  const existing = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { id: true, deletedAt: true },
+  });
+  if (!existing || existing.deletedAt) {
+    throw new AppError("User not found", 404);
+  }
+
+  const profileImage = await uploadFile(`users/${userId}`, file);
+  await prisma.user.update({
+    where: { id: userId },
+    data: { profileImage },
+  });
+  return getMe(userId);
 }
 
 export async function updateProfile(userId: string, input: UpdateProfileInput) {

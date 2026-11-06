@@ -16,6 +16,11 @@ export const inbox = asyncHandler(async (req: Request, res: Response) => {
   res.status(200).json({ success: true, data });
 });
 
+export const unreadCount = asyncHandler(async (req: Request, res: Response) => {
+  const data = await chatService.getUnreadTotal(ctx(req));
+  res.status(200).json({ success: true, data });
+});
+
 export const open = asyncHandler(async (req: Request, res: Response) => {
   const data = await chatService.openRoom(ctx(req), req.body as OpenChatInput);
   res.status(200).json({ success: true, data });
@@ -24,6 +29,11 @@ export const open = asyncHandler(async (req: Request, res: Response) => {
 export const messages = asyncHandler(async (req: Request, res: Response) => {
   const after = typeof req.query.after === "string" ? req.query.after : undefined;
   const data = await chatService.listMessages(ctx(req), String(req.params.id), after);
+  res.status(200).json({ success: true, data });
+});
+
+export const markRead = asyncHandler(async (req: Request, res: Response) => {
+  const data = await chatService.markRead(ctx(req), String(req.params.id));
   res.status(200).json({ success: true, data });
 });
 

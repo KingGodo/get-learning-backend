@@ -45,6 +45,15 @@ export const updateProfile = asyncHandler(async (req: Request, res: Response) =>
   res.status(200).json({ success: true, data });
 });
 
+export const uploadProfileImage = asyncHandler(async (req: Request, res: Response) => {
+  if (!req.file) {
+    res.status(400).json({ success: false, message: "Choose a profile photo" });
+    return;
+  }
+  const data = await authService.setProfileImage(req.user!.userId, req.file);
+  res.status(200).json({ success: true, data });
+});
+
 export const changePassword = asyncHandler(async (req: Request, res: Response) => {
   const data = await authService.changePassword(req.user!.userId, req.body);
   res.status(200).json({ success: true, data });

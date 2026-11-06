@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { authenticate } from "../../middlewares/auth.middleware.js";
+import { uploadImage } from "../../middlewares/upload.middleware.js";
 import { validate } from "../../middlewares/validate.middleware.js";
 import * as authController from "./auth.controller.js";
 import {
@@ -78,6 +79,13 @@ router.patch(
   authenticate,
   validate(updateProfileSchema),
   authController.updateProfile,
+);
+
+router.post(
+  "/me/profile-image",
+  authenticate,
+  uploadImage.single("photo"),
+  authController.uploadProfileImage,
 );
 
 router.patch(

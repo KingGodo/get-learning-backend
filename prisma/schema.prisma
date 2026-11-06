@@ -137,6 +137,7 @@ model User {
   teacherProfileRequests TeacherProfileRequest[]
   studentProfileRequests StudentProfileRequest[]
   chatMessages ChatMessage[]
+  chatRoomReads ChatRoomRead[]
 
   @@index([schoolId])
   @@index([role])
@@ -328,6 +329,7 @@ model ChatRoom {
   parent   Parent?       @relation(fields: [parentId], references: [id], onDelete: Cascade)
   student  Student?      @relation(fields: [studentId], references: [id], onDelete: Cascade)
   messages ChatMessage[]
+  reads    ChatRoomRead[]
 
   @@index([schoolId, kind])
   @@index([teacherId])
@@ -346,6 +348,20 @@ model ChatMessage {
   sender User     @relation(fields: [senderId], references: [id], onDelete: Cascade)
 
   @@index([roomId, createdAt])
+}
+
+model ChatRoomRead {
+  id         String   @id @default(cuid())
+  roomId     String
+  userId     String
+  lastReadAt DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  room ChatRoom @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  user User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([roomId, userId])
+  @@index([userId])
 }
 
 model Assignment {
